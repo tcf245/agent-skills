@@ -58,7 +58,10 @@ scan_for_excluding_example() {
 echo "[lint] starting…"
 
 # --- 1. Personal emails ----------------------------------------------------
-scan_for "personal emails" '(whc2458|tcf245)@gmail\.com'
+# tcf245@gmail.com is the public maintainer address (appears in every commit's
+# Author field and in .claude-plugin/plugin.json) — not treated as sensitive.
+# whc2458@gmail.com is a non-public alternative address — must never appear.
+scan_for "non-public personal emails" 'whc2458@gmail\.com'
 
 # --- 2. Hardcoded user paths (except inside *.example.* files) -------------
 scan_for_excluding_example "hardcoded /Users/eric/ paths" '/Users/eric/'
