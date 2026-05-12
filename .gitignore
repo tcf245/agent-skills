@@ -1,0 +1,28 @@
+# Sensitive data — must never be committed
+**/config.json
+**/config.local.*
+**/.env
+**/.env.local
+**/secrets/
+**/watchlist*.json
+**/cookies/
+**/*-private.md
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Python (for skills with bundled scripts)
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Build / cache
+**/.cache/
+node_modules/
