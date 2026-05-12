@@ -5,7 +5,7 @@ VENDORED SKILL — DO NOT EDIT
 Source skill:       superpowers:verification-before-completion
 Source version:     5.0.7
 Source repository:  https://github.com/obra/superpowers
-Source path:        /Users/eric/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/verification-before-completion/SKILL.md
+Source path:        skills/verification-before-completion/SKILL.md (in superpowers repo)
 Copyright:          (c) 2025 Jesse Vincent
 License:            MIT (see vendored/README.md for full notice)
 Snapshot date:      2026-05-12

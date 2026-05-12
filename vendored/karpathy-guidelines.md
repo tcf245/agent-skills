@@ -5,7 +5,7 @@ VENDORED SKILL — DO NOT EDIT
 Source skill:       andrej-karpathy-skills:karpathy-guidelines
 Source version:     1.0.0
 Source repository:  https://github.com/karpathy/karpathy-skills
-Source path:        /Users/eric/.claude/plugins/cache/karpathy-skills/andrej-karpathy-skills/1.0.0/skills/karpathy-guidelines/SKILL.md
+Source path:        skills/karpathy-guidelines/SKILL.md (in andrej-karpathy-skills repo)
 Copyright:          (c) 2025 Andrej Karpathy
 License:            MIT (see vendored/README.md for full notice)
 Snapshot date:      2026-05-12
