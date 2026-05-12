@@ -34,7 +34,8 @@ cd ~/workspace/agent-skills
 Per-platform behavior:
 
 ### Claude Code
-- Symlinks `skills/` into `~/.claude/skills/agent-skills/`
+- Symlinks `skills/` into `~/.claude/skills/agent-skills/` (lazy-load via the `Skill` tool)
+- Splices `dist/CLAUDE.md` into `~/.claude/CLAUDE.md` (eager-load index — works on a new machine before the symlink, and survives multi-device setups via Anthropic account sync)
 - Restart Claude Code to pick up the new skills
 - For vendored content, prefer installing the original plugins (`claude plugins install superpowers` etc.) — they're always fresher than this repo's snapshot
 

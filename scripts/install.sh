@@ -15,6 +15,7 @@ AGENT_SKILLS_HOME="${AGENT_SKILLS_HOME:-$HOME/.config/agent-skills}"
 CODEX_AGENTS_FILE="${CODEX_AGENTS_FILE:-$HOME/.codex/AGENTS.md}"
 GEMINI_AGENTS_FILE="${GEMINI_AGENTS_FILE:-$HOME/.gemini/GEMINI.md}"
 CC_SKILLS_DIR="${CC_SKILLS_DIR:-$HOME/.claude/skills}"
+CC_CLAUDE_FILE="${CC_CLAUDE_FILE:-$HOME/.claude/CLAUDE.md}"
 
 PLATFORM="${1:-}"
 
@@ -24,7 +25,7 @@ log() { printf '[install] %s\n' "$*"; }
 die() { printf '[install] ERROR: %s\n' "$*" >&2; exit 1; }
 
 ensure_built() {
-  if [ ! -f "$REPO_ROOT/dist/AGENTS.md" ] || [ ! -f "$REPO_ROOT/dist/GEMINI.md" ]; then
+  if [ ! -f "$REPO_ROOT/dist/AGENTS.md" ] || [ ! -f "$REPO_ROOT/dist/GEMINI.md" ] || [ ! -f "$REPO_ROOT/dist/CLAUDE.md" ]; then
     log "dist/ missing — running build..."
     "$REPO_ROOT/scripts/build.sh"
   fi
@@ -76,12 +77,27 @@ splice_into_file() {
 # --- platform installers ----------------------------------------------------
 
 install_cc() {
-  # CC reads skills from ~/.claude/skills/<name>/SKILL.md or the plugin marketplace.
-  # Simplest path: symlink each category dir under skills/ into ~/.claude/skills/agent-skills/...
+  # CC reads skills from ~/.claude/skills/<name>/SKILL.md (lazy via Skill tool)
+  # AND ~/.claude/CLAUDE.md (eager-loaded instructions / index).
+  # We install both — they're complementary:
+  #   - Symlinked skills: Skill tool can load them on demand by name
+  #   - CLAUDE.md index: works on any machine, even before the symlink is set up,
+  #     and survives switching to a CC instance without plugin access
+  ensure_built
+  publish_skills
+
+  # 1. Lazy-load path: skill files reachable via Skill tool
   mkdir -p "$CC_SKILLS_DIR"
   ln -sfn "$REPO_ROOT/skills" "$CC_SKILLS_DIR/agent-skills"
   log "CC: linked $CC_SKILLS_DIR/agent-skills -> $REPO_ROOT/skills"
-  log "CC: restart Claude Code to pick up new skills"
+
+  # 2. Index: splice into ~/.claude/CLAUDE.md with absolute paths
+  local tmp="$(mktemp)"
+  rewrite_paths < "$REPO_ROOT/dist/CLAUDE.md" > "$tmp"
+  splice_into_file "$CC_CLAUDE_FILE" "$tmp"
+  rm -f "$tmp"
+
+  log "CC: restart Claude Code to pick up the symlinked skills"
 }
 
 install_codex() {
