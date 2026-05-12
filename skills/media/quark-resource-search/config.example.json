@@ -1,0 +1,22 @@
+{
+  "_comment_": "Copy this file to config.local.json (gitignored) and fill in real values. Then export QUARK_SKILL_CONFIG=/abs/path/to/config.local.json so the scripts can find it.",
+
+  "alist_url": "http://localhost:5244",
+  "alist_user": "<YOUR_ALIST_USERNAME>",
+  "alist_password": "<YOUR_ALIST_PASSWORD>",
+
+  "alist_organizer_dir": "<ABS_PATH_TO_alist_organizer_CHECKOUT>",
+
+  "tmdb": {
+    "api_key": "<YOUR_TMDB_API_KEY_OR_EMPTY>",
+    "access_token": "<YOUR_TMDB_ACCESS_TOKEN_OR_EMPTY>",
+    "language": "zh-CN"
+  },
+
+  "tvdb": {
+    "api_key": "<YOUR_TVDB_API_KEY_OR_EMPTY>",
+    "language": "zh-CN"
+  },
+
+  "watch_list": []
+}
