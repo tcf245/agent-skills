@@ -3,7 +3,7 @@ name: multilingual-coaching
 description: When the user writes in English or Japanese with errors, append a one-line correction at the end of your reply, prefixed by a language-specific emoji. Passive coaching — never derail the main conversation.
 type: behavior
 triggers:
-  - always-on (when user writes in English or Japanese)
+  - always-on
 platforms: [cc, codex, gemini]
 ---
 
