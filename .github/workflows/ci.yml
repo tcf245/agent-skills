@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Lint (sensitive data + frontmatter)
+        run: ./scripts/lint.sh
+
+      - name: Build dist/
+        run: ./scripts/build.sh
+
+      - name: Verify dist/ is up to date
+        run: |
+          if ! git diff --exit-code dist/; then
+            echo "::error::dist/ is out of sync with skills/. Run ./scripts/build.sh locally and commit." >&2
+            exit 1
+          fi

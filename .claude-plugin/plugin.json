@@ -1,0 +1,22 @@
+{
+  "name": "agent-skills",
+  "description": "Cross-platform skill collection — methodology and workflows that work identically on Claude Code, Codex CLI, and Gemini CLI.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Eric Tan",
+    "email": "tcf245@gmail.com"
+  },
+  "homepage": "https://github.com/tcf245/agent-skills",
+  "repository": "https://github.com/tcf245/agent-skills",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "cross-platform",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "workflow",
+    "agents-md",
+    "obsidian"
+  ]
+}
