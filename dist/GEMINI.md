@@ -56,12 +56,33 @@ Do not paraphrase the rules from memory. Read the skill file fresh each time —
   - **triggers**: "multiple independent tasks", "in parallel", "batch of", "iterate on diagrams", "search across"
   - **summary**: Use when facing 2+ independent tasks that have no shared state or sequential dependency, especially when each task is slow (long render, deep search) or low-context (a clear spec is enough). Spawn parallel workers; do not serialize.
 
+### Personal context
+
+- `skills/context/personal-context-sync.md`
+  - **name**: personal-context-sync
+  - **triggers**: (see description)
+  - **summary**: Use when a task depends on Eric's personal background or when new personal facts appear in chat.
+
+### Language learning
+
+- `skills/language/jlpt-n2-coach/SKILL.md`
+  - **name**: jlpt-n2-coach
+  - **triggers**: (see description)
+  - **summary**: Use when Eric asks for JLPT N2 coaching, N2 mock-test analysis, Japanese OCR from test photos, wrong-answer整理, accuracy tracking, N2 knowledge-point summaries, wiki-backed study plans, drill generation from past mistakes, or web research for N2 grammar/vocabulary/reading strategies. Trigger on 日语N2, JLPT N2, N2考试, 模考, 错题, 正确率, 提分, 题库, 知识点, 日语OCR, 出几道题, 练习题, or requests to raise accuracy above 50%.
+
+### LLM Wiki
+
+- `skills/wiki/llm-wiki.md`
+  - **name**: llm-wiki
+  - **triggers**: (see description)
+  - **summary**: LLM Wiki knowledge base management skill for Eric's personal Obsidian vault. Trigger when the user says INGEST / LINT / GRAPH / CAPTURE, drops a new raw article or file to process, asks to add something to the wiki, wants a health check, or when conversation produces a valuable insight worth archiving. Also trigger on: "add to wiki", "save to knowledge base", "update wiki", "run INGEST", "run LINT", "is X in the wiki", "clean up the knowledge base", "加到 wiki", "存到知识库", "更新 wiki", "做 INGEST", "跑 LINT".
+
 ### Obsidian LLM Wiki
 
 - `skills/obsidian-llm-wiki/capture.md`
   - **name**: obsidian-llm-wiki-capture
-  - **triggers**: "CAPTURE", "save this insight", "archive this to wiki", "this should be in the knowledge base"
-  - **summary**: Use when the current conversation produces a valuable, durable insight that should be archived to the wiki. Captures the insight as a new concept page (or extends an existing one). Distinct from INGEST, which processes external sources.
+  - **triggers**: "CAPTURE", "save this insight", "archive this to wiki", "this should be in the knowledge base", "valuable insight", "durable knowledge", "conversation produces reusable knowledge", "conversation-native INGEST"
+  - **summary**: Use when the current conversation produces a valuable, durable insight that should be archived to the wiki, including proactively at natural stopping points after multi-turn conversations. Captures the insight as a new concept page, extends an existing one, or records a session-specific conclusion. This is the conversation-native form of INGEST.
 - `skills/obsidian-llm-wiki/graph.md`
   - **name**: obsidian-llm-wiki-graph
   - **triggers**: "GRAPH", "draw the wiki", "show me the structure", "visualize relationships", "domain map"
@@ -78,6 +99,13 @@ Do not paraphrase the rules from memory. Read the skill file fresh each time —
   - **name**: obsidian-llm-wiki-methodology
   - **triggers**: "INGEST", "LINT", "GRAPH", "CAPTURE", "add to wiki", "save to knowledge base", "update wiki"
   - **summary**: Use when working with an Obsidian vault organized as an LLM-collaborative knowledge base (Karpathy-style). Defines the three-layer directory decision, schema, naming, and the snapshot model. Read this first before any INGEST / LINT / GRAPH / CAPTURE operation.
+
+### Diagrams
+
+- `skills/diagram/fireworks-tech-graph/SKILL.md`
+  - **name**: fireworks-tech-graph
+  - **triggers**: (see description)
+  - **summary**: Use when the user wants to create any technical diagram - architecture, data flow, flowchart, sequence, agent/memory, or concept map - and export as SVG+PNG. Trigger on: "画图" "帮我画" "生成图" "做个图" "架构图" "流程图" "可视化一下" "出图" "generate diagram" "draw diagram" "visualize" or any system/flow description the user wants illustrated.
 
 ### Media
 

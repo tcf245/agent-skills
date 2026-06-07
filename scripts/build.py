@@ -39,6 +39,8 @@ def discover_files() -> list[Path]:
         for f in sorted(REPO_ROOT.glob(pattern)):
             if f.name in skips:
                 continue
+            if "references" in f.relative_to(REPO_ROOT).parts:
+                continue
             if f in seen:
                 continue
             seen.add(f)
@@ -56,7 +58,7 @@ FRONTMATTER_RE = re.compile(
 def parse_frontmatter(content: str) -> dict | None:
     """Tiny YAML subset parser. Supports:
        - key: value
-       - key: |   (multi-line block scalar — joined into single string)
+       - key: | or >- (multi-line block scalar)
        - key: [a, b, c]
        - key:\n  - a\n  - b
     """
@@ -78,14 +80,17 @@ def parse_frontmatter(content: str) -> dict | None:
             i += 1
             continue
         key, raw = m_kv.group(1), m_kv.group(2).strip()
-        # Block scalar `|`
-        if raw == "|":
+        # Block scalars: `|` preserves newlines, `>` / `>-` folds to spaces.
+        if raw in {"|", "|-", ">", ">-"}:
             block_lines = []
             i += 1
             while i < len(lines) and (lines[i].startswith("  ") or not lines[i].strip()):
                 block_lines.append(lines[i][2:] if lines[i].startswith("  ") else "")
                 i += 1
-            result[key] = "\n".join(block_lines).strip()
+            if raw.startswith(">"):
+                result[key] = " ".join(line.strip() for line in block_lines).strip()
+            else:
+                result[key] = "\n".join(block_lines).strip()
             continue
         # Inline list `[a, b]`
         if raw.startswith("[") and raw.endswith("]"):
@@ -165,12 +170,27 @@ def load_all_skills() -> list[Skill]:
 
 # --- Output generation ------------------------------------------------------
 
-CATEGORY_ORDER = ["coding", "collaboration", "communication", "obsidian-llm-wiki", "media", "vendored"]
+CATEGORY_ORDER = [
+    "coding",
+    "collaboration",
+    "communication",
+    "context",
+    "language",
+    "wiki",
+    "obsidian-llm-wiki",
+    "diagram",
+    "media",
+    "vendored",
+]
 CATEGORY_TITLES = {
     "coding": "Coding workflows",
     "collaboration": "Collaboration patterns",
     "communication": "Communication habits",
+    "context": "Personal context",
+    "language": "Language learning",
+    "wiki": "LLM Wiki",
     "obsidian-llm-wiki": "Obsidian LLM Wiki",
+    "diagram": "Diagrams",
     "media": "Media",
     "vendored": "Vendored third-party (non-CC platforms only)",
 }

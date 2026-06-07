@@ -16,6 +16,7 @@ VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".rmvb", ".wmv"}
 class AlistClient:
     def __init__(self, url, username, password):
         self.url = url.rstrip("/")
+        self.token = None
         self.token = self._login(username, password)
 
     def _req(self, endpoint, data=None):

@@ -17,6 +17,25 @@ platforms: [cc, codex, gemini]
 
 An LLM-collaborative knowledge base built in Obsidian. The agent is the *programmer*, Obsidian is the *IDE*, the vault is the *codebase*. The goal is a compounding personal knowledge graph — every conversation that produces durable insight adds a node or edge.
 
+## Conversation Capture Policy
+
+Treat CAPTURE as the conversation-native form of INGEST. Eric may use "INGEST"
+as the umbrella term for both external-source ingestion and conversation-derived
+knowledge capture.
+
+After multi-turn conversations, proactively decide whether the conversation
+produced knowledge worth adding to the wiki. Preserve knowledge that is hard for
+a public LLM to reconstruct later: internal/work context, company or team
+knowledge, repo-specific conventions, local development workflows, personal
+preferences, or reusable decisions. Also preserve public-domain topics when the
+conversation fused them with Eric's own questions, clarifications, trade-offs,
+and conclusions into a reusable personal understanding.
+
+Do not preserve generic public facts, one-off answers, unresolved explorations,
+or material that is easy to regenerate and contains no Eric-specific judgment.
+When the value is clear, proceed with CAPTURE/INGEST. When borderline, ask for a
+short confirmation before writing.
+
 ## Configuration
 
 Read these values from `skills/obsidian-llm-wiki/config.example.yml` (or the user's local override):

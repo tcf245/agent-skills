@@ -17,6 +17,10 @@ If you switch between agents, each one forgets your conventions: how you plan, w
 | **Coding** | `plan-mode`, `tdd-workflow`, `verification-before-completion`, `systematic-debugging` | `/plan`, "implement X", "bug" |
 | **Collaboration** | `diagram-tier-selection`, `parallel-tasks`, `brainstorm-spec-plan-implement` | "draw a diagram", "in parallel", "let's build" |
 | **Communication** | `language-mirroring`, `multilingual-coaching` | always-on |
+| **Context** | `personal-context-sync` | personal background, durable personal facts |
+| **Language** | `jlpt-n2-coach` | JLPT N2, mock-test analysis, drills |
+| **Wiki** | `llm-wiki` | `INGEST`, `LINT`, `GRAPH`, `CAPTURE` |
+| **Diagram** | `fireworks-tech-graph` | technical diagrams, SVG+PNG export |
 | **Obsidian LLM Wiki** | `methodology`, `ingest`, `lint`, `graph`, `capture` | `INGEST`, `LINT`, `GRAPH`, `CAPTURE` |
 | **Media** | `quark-resource-search` | "find resource", "organize this folder" |
 | **Vendored (3rd party)** | `superpowers-*` (×7), `karpathy-guidelines` | various — see `dist/AGENTS.md` |
@@ -58,6 +62,10 @@ skills/             ← Self-authored skills (source of truth)
   coding/           ← TDD, plan-mode, debugging, verification
   collaboration/    ← Diagram tiers, parallel tasks, pipeline
   communication/    ← Language mirroring, error coaching
+  context/          ← Personal-context synchronization workflows
+  language/         ← Language-learning coaching workflows
+  wiki/             ← Personal wiki management workflows
+  diagram/          ← Diagram generation workflows and render helpers
   obsidian-llm-wiki/ ← Karpathy-style knowledge base ops
   media/quark-resource-search/ ← Movie/TV resource search + Alist organize
 vendored/           ← Verbatim snapshots of third-party skills (MIT) with attribution

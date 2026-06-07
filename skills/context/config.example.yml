@@ -1,0 +1,3 @@
+llm_wiki_path: "${LLM_WIKI_PATH}"
+personal_profile_path: "${LLM_WIKI_PATH}/wiki/records/Eric Personal Profile.md"
+

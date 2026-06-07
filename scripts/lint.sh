@@ -109,7 +109,7 @@ fi
 
 # --- 6. Frontmatter sanity (skills/ only — vendored uses upstream's) -------
 missing=""
-for f in $(find skills -name '*.md' ! -name '_schema.md' ! -name 'README.md'); do
+for f in $(find skills -name '*.md' ! -name '_schema.md' ! -name 'README.md' ! -path '*/references/*'); do
   # Find the first --- and the second --- in the file
   fm=$(awk '/^---$/{c++; if(c==1) start=1; else if(c==2){print; exit}} c==1 && !/^---$/{print}' "$f")
   for key in name description; do

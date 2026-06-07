@@ -1,0 +1,5 @@
+llm_wiki_path: "${LLM_WIKI_PATH}"
+llm_wiki_mirror_path: "${LLM_WIKI_MIRROR_PATH}"
+llm_wiki_repo_path: "${LLM_WIKI_REPO_PATH}"
+llm_wiki_snapshot_script: "${LLM_WIKI_SNAPSHOT_SCRIPT}"
+
