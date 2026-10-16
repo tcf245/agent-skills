@@ -42,6 +42,7 @@ Scripts live under `scripts/` next to this `SKILL.md`. They take all credentials
 
 - **Scripts handle determinism**: HTTP, link extraction, quality scoring, JSON I/O, Alist API calls.
 - **LLM handles judgment**: pick the best candidate, infer the canonical English title/year, handle exceptions.
+- **Jev pre-filters bulk judgment**: matching dozens of candidates to the request is done by Jev, not by reading them all.
 - **Minimize token use**: only invoke the LLM at decision points.
 
 ## Entry decision
@@ -55,33 +56,48 @@ Scripts live under `scripts/` next to this `SKILL.md`. They take all credentials
 
 ## Entry A — full flow
 
-### A1. Run the candidate-search script
+### A1. Run the candidate search, with Jev pre-ranking
+
+Write one sentence describing exactly what the user wants (title + year, season, quality,
+subtitles), then:
 
 ```bash
-python scripts/search_quark.py "{title}" 2>/dev/null
+python scripts/search_quark.py "{title}" --want "{what we want}" --top 5 2>/dev/null
 ```
 
-Search priority: **tvso.uk → Google → mizixing/kuakes**. The script emits a JSON array sorted by quality score. Each candidate has `title`, `url`, `quality_score`, `is_tc`, `valid`, `pub_date`, `source`.
+Search priority: **tvso.uk → Google**. `--want` sends every candidate's title and page
+snippet to Jev (`jev rank`, see `tools/jev/`), so only the best 5 reach the context.
+Each candidate has `title`, `url`, `quality_score`, `is_tc`, `valid`, `pub_date`, `source`,
+`snippet`, and with `--want` also `jev_score` / `jev_conf`.
 
-- Quality score: 4K/2160p/UHD = 3; original disc / Blu-ray = 2; 1080P = 1; other = 0
-- `is_tc: true` flags theatrical-camera / pirated low-quality rips
-- `valid` is set by a HEAD request on the top three non-TC candidates
-- All three sources combine; deduplicated by URL
+- `jev_score` 0–3: 0 = wrong title/year/season or TC rip; 1 = right title, low/unknown
+  quality or partial; 2 = right title, 1080p complete; 3 = right title, 4K/remux complete
+- Candidates with `jev_score < 1` or `is_tc` are marked `valid: false` and never HEAD-checked
+- `quality_score` (keyword: 4K = 3, disc = 2, 1080P = 1) is the tiebreaker, then newest `pub_date`
+- `valid` is a HEAD check on the top three plausible candidates. Quark answers 200 for most
+  share URLs, so A3 in the browser is the real liveness check.
+- If Jev is unavailable the script logs `[jev] skipped` and falls back to keyword order.
 
-Exceptions:
-- tvso.uk empty/timeout → script auto-falls back to Google
-- Google blocked → script switches to resource-site-only search
-- Single-source timeout doesn't kill the run
+**Scraper returned nothing** (tvso.uk is now a JS app and Google blocks scraping, so this is
+common): search in the browser instead (tvso.uk or a resource site), collect *every* result row
+as `[{"title", "url", "snippet"}]` into a temp JSON file without reading them one by one, then
+let Jev do the triage:
+
+```bash
+python scripts/search_quark.py --candidates "$TMPDIR/quark_rows.json" --want "{what we want}" --top 5
+```
 
 ### A2. [LLM decision] Pick the best candidate
 
-Rules in order:
-1. `valid: true` AND `is_tc: false` AND highest `quality_score`
-2. On a tie, prefer the more recent `pub_date` (newer = less likely to be revoked)
-3. On a date tie, prefer the candidate whose `title`/`snippet` suggests larger file or cleaner naming
+From the (at most 5) rows printed:
+1. `valid` not false AND highest `jev_score` (or highest `quality_score` without Jev)
+2. `jev_conf` < 0.5 means Jev was unsure — read that row's title/snippet yourself
+3. On a tie, prefer the more recent `pub_date`, then cleaner naming / larger file
 4. If all valid candidates are tied, ask the user
 
-If no valid candidate: retry A1 once with the query rewritten as `"{title} 1080P 夸克"` or `"{title} {current_year}"`. Cap at 2 retries; if still empty, tell the user and stop.
+If no candidate has `jev_score >= 1`: retry A1 once with the query rewritten as
+`"{title} 1080P 夸克"` or `"{title} {current_year}"`. Cap at 2 retries; if still empty,
+tell the user and stop.
 
 ### A3. Save to Quark via the browser
 
@@ -239,7 +255,8 @@ python scripts/alist_rename.py batch --stdin \
 | Google / tvso scrape + link extraction | script | deterministic HTTP |
 | Quality scoring (4K / 1080P / TC) | script | fixed keyword matches |
 | Link validity check | script | HTTP status |
-| **Pick the best candidate** | **LLM** | composite judgment (quality + naming + recency) |
+| Match each candidate to what we want | Jev (`--want`) | bulk semantic triage; keeps noise out of context |
+| **Pick the best candidate** | **LLM** | final call among ≤5 Jev-ranked rows |
 | Save to Quark in browser | browser-automation tool | requires authenticated session |
 | Wait for Alist refresh | script (sleep) | fixed delay |
 | Update watch_list | script | JSON write, no judgment |
