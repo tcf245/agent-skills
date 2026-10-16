@@ -110,5 +110,41 @@ class Retry(unittest.TestCase):
         self.assertEqual(len(attempts), 3)
 
 
+class Unavailability(unittest.TestCase):
+    def test_retry_exhaustion_raises_unavailable(self):
+        def post(body):
+            raise jev.Retryable("529")
+        with self.assertRaises(jev.Unavailable):
+            jev.with_retry(post, {}, tries=3, sleep=lambda s: None)
+
+    def test_cli_exits_3_when_service_down(self):
+        def down(state, questions, model="jev-latest"):
+            raise jev.Unavailable("connection refused")
+        orig_call, orig_key, orig_stdin = jev.make_call, jev.api_key, jev.sys.stdin
+        jev.make_call, jev.api_key = (lambda model, key: down), (lambda: "k")
+        jev.sys.stdin = io.StringIO("a\nb\n")
+        try:
+            with self.assertRaises(SystemExit) as cm:
+                jev.main(["filter", "-q", "x?"])
+            self.assertEqual(cm.exception.code, 3)
+        finally:
+            jev.make_call, jev.api_key, jev.sys.stdin = orig_call, orig_key, orig_stdin
+
+    def test_missing_key_is_unavailable(self):
+        orig_env = jev.os.environ.pop("TYPESAFE_API_KEY", None)
+        orig_run = jev.subprocess.run
+
+        def fail(*a, **k):
+            raise jev.subprocess.CalledProcessError(44, "security")
+        jev.subprocess.run = fail
+        try:
+            with self.assertRaises(jev.Unavailable):
+                jev.api_key()
+        finally:
+            jev.subprocess.run = orig_run
+            if orig_env:
+                jev.os.environ["TYPESAFE_API_KEY"] = orig_env
+
+
 if __name__ == "__main__":
     unittest.main()

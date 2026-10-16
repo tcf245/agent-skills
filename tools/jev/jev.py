@@ -13,6 +13,11 @@ Common flags: --context TEXT|@file (shared background, e.g. what the user wants)
 --top N, --fields a,b (output projection), --max-chars N, --model, --workers.
 Key: $TYPESAFE_API_KEY, else macOS Keychain service `typesafe-api-key` (account `eric`).
 Stdlib only.
+
+Fallback contract: if Jev cannot answer (no key, network down, timeout, 5xx/429 after
+retries, rejected key) the command prints `jev: UNAVAILABLE …` to stderr, prints nothing on
+stdout, and exits 3. Callers must then degrade (keyword/rule ordering, grep, or reading
+directly) instead of failing. Exit 2 means a bad request (a bug in the caller).
 """
 import argparse
 import json
@@ -32,6 +37,12 @@ class Retryable(Exception):
     pass
 
 
+class Unavailable(Exception):
+    """Jev could not answer; the caller should fall back."""
+
+EXIT_UNAVAILABLE = 3
+
+
 # --- transport ---------------------------------------------------------------
 
 def api_key():
@@ -43,16 +54,16 @@ def api_key():
             ["security", "find-generic-password", "-s", "typesafe-api-key", "-a", "eric", "-w"],
             capture_output=True, text=True, check=True).stdout.strip()
     except Exception:
-        sys.exit("jev: no API key (set TYPESAFE_API_KEY or add Keychain item typesafe-api-key)")
+        raise Unavailable("no API key (set TYPESAFE_API_KEY or Keychain item typesafe-api-key)")
 
 
-def with_retry(post, body, tries=4, sleep=time.sleep):
+def with_retry(post, body, tries=3, sleep=time.sleep):
     for attempt in range(tries):
         try:
             return post(body)
-        except Retryable:
+        except Retryable as e:
             if attempt == tries - 1:
-                raise
+                raise Unavailable("gave up after %d tries: %s" % (tries, e))
             sleep(0.5 * 2 ** attempt)
 
 
@@ -61,17 +72,28 @@ def make_call(model, key):
         req = urllib.request.Request(API, data=json.dumps(body).encode(), method="POST", headers={
             "Authorization": "Bearer " + key, "Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
+            with urllib.request.urlopen(req, timeout=30) as r:
                 return json.load(r)
         except urllib.error.HTTPError as e:
-            if e.code in (429, 500, 502, 503, 529):
-                raise Retryable(str(e.code))
-            raise SystemExit("jev: HTTP %s %s" % (e.code, e.read().decode(errors="replace")[:300]))
-        except urllib.error.URLError as e:
-            raise Retryable(str(e))
+            if e.code in (401, 403):
+                raise Unavailable("API key rejected (HTTP %d)" % e.code)
+            if e.code in (408, 429) or e.code >= 500:
+                raise Retryable("HTTP %d" % e.code)
+            print("jev: HTTP %s %s" % (e.code, e.read().decode(errors="replace")[:300]), file=sys.stderr)
+            sys.exit(2)
+        except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError) as e:
+            raise Retryable(repr(e))
+
+    down = []  # circuit breaker: after one confirmed outage, fail the rest fast
 
     def call(state, questions, model=model):
-        return with_retry(post, {"state": state, "model": model, "questions": questions})
+        if down:
+            raise Unavailable(down[0])
+        try:
+            return with_retry(post, {"state": state, "model": model, "questions": questions})
+        except Unavailable as e:
+            down.append(str(e))
+            raise
     return call
 
 
@@ -235,6 +257,21 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     raw = open(a.input).read() if a.input else sys.stdin.read()
+    try:
+        rows, st, t0 = _run(a, raw)
+    except Unavailable as e:
+        print("jev: UNAVAILABLE (%s) — fall back to non-Jev handling" % e, file=sys.stderr)
+        sys.exit(EXIT_UNAVAILABLE)
+    for row in rows:
+        print(json.dumps(row, ensure_ascii=False))
+    extra = "".join(" · %s=%s" % (k, v) for k, v in st.items()
+                    if k not in ("n", "input_tokens", "output_tokens"))
+    print("jev %s: %d in → %d out · jev tokens %d/%d%s · %.1fs" % (
+        a.cmd, st["n"], len(rows), st["input_tokens"], st["output_tokens"], extra,
+        time.time() - t0), file=sys.stderr)
+
+
+def _run(a, raw):
     call = make_call(a.model, api_key())
     ctx = _context(a.context)
     t0 = time.time()
@@ -257,13 +294,7 @@ def main(argv=None):
         fields = a.fields.split(",") if a.fields else None
         for row in rows:
             row["item"] = project(items[row["i"]], fields, a.max_chars)
-    for row in rows:
-        print(json.dumps(row, ensure_ascii=False))
-    extra = "".join(" · %s=%s" % (k, v) for k, v in st.items()
-                    if k not in ("n", "input_tokens", "output_tokens"))
-    print("jev %s: %d in → %d out · jev tokens %d/%d%s · %.1fs" % (
-        a.cmd, st["n"], len(rows), st["input_tokens"], st["output_tokens"], extra,
-        time.time() - t0), file=sys.stderr)
+    return rows, st, t0
 
 
 if __name__ == "__main__":
