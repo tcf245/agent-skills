@@ -228,6 +228,10 @@ def render_index(skills: list[Skill], platform: str, *, repo_url: str) -> str:
 
     # Filter to platform
     visible = [s for s in skills if platform in s.platforms]
+    if platform == "cc":
+        # Vendored snapshots are for non-CC platforms only: Claude Code installs the upstream plugin instead,
+        # and listing both gives the model two copies of the same rules.
+        visible = [s for s in visible if s.category != "vendored"]
 
     # Always-on rules
     always_on = [s for s in visible if s.always_on]
