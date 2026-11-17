@@ -1,0 +1,6 @@
+#!/bin/bash
+# Hand one task to agy (Gemini) — see agy_delegate.py and skills/coding/agy-delegation.md.
+# Claude Code sandboxes let exactly this path out via sandbox.excludedCommands ("<this path> *"); run it as a lone command.
+set -euo pipefail
+export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"
+exec /opt/homebrew/bin/python3 "$(dirname "$(readlink -f "$0")")/agy_delegate.py" "$@"
