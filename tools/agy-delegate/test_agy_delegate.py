@@ -251,35 +251,34 @@ def test_quota_resets_with_the_window(env):
 
 
 # ---- agy quota: protect a model once less than half of its quota is left (Eric 2026-11-18) ----------------------------
+# agy's quota page (2026-11-18): "GEMINI MODELS" = Hydrogen + 3.8 Flash share one bucket; Argon (+ Orchestrator) has its own.
 
 class OutOfQuota(FakeAgy):
-    """Every model of the given families answers with a quota error."""
+    """Every model of the given buckets answers with a quota error."""
 
-    def __init__(self, *families):
+    def __init__(self, *buckets):
         super().__init__()
-        self.families = families
+        self.buckets = buckets
 
     def __call__(self, command, cwd, timeout, log):
-        if agy.family(model_of({"command": command})) in self.families:
+        if agy.bucket(model_of({"command": command})) in self.buckets:
             self.calls.append({"command": command, "cwd": Path(cwd), "timeout": timeout})
-            return 1, _stream({"status": "ERROR", "error": "RESOURCE_EXHAUSTED: weekly quota exceeded"}), ""
+            return 1, _stream({"status": "ERROR", "error": "RESOURCE_EXHAUSTED: quota exceeded"}), ""
         return super().__call__(command, cwd, timeout, log)
+
+
+def test_hydrogen_and_flash_share_the_gemini_bucket():
+    assert {agy.bucket(m) for m in ("gemini-4-hydrogen-high", "gemini-3.8-flash-low")} == {"gemini"}
+    assert {agy.bucket(m) for m in ("gemini-4-argon-low", agy.ORCHESTRATOR)} == {"argon"}
 
 
 def test_a_model_with_less_than_half_its_quota_left_is_swapped_for_one_with_more(env):
     """Eric 2026-11-18: Argon's weekly quota was down to 19%; below 50% a model is protected, not used up."""
-    agy.record_agy_quota("argon", 19, env)
+    agy.record_agy_quota("argon", 18.74, env)
     fake = FakeAgy()
-    result = go({"goal": "x", "repo": repo(env), "model": "gemini-4-argon-high"}, env, fake)
+    result = go({"goal": "x", "repo": repo(env), "model": agy.ORCHESTRATOR}, env, fake)
     assert model_of(fake.calls[0]) == "gemini-4-hydrogen-high"
-    assert result["model_swapped_from"] == "gemini-4-argon-high"
-
-
-def test_the_orchestrator_counts_as_argon(env):
-    agy.record_agy_quota("argon", 19, env)
-    fake = FakeAgy()
-    go({"goal": "x", "repo": repo(env), "model": agy.ORCHESTRATOR}, env, fake)
-    assert model_of(fake.calls[0]) == "gemini-4-hydrogen-high"
+    assert result["model_swapped_from"] == agy.ORCHESTRATOR
 
 
 def test_a_model_with_half_or_more_left_is_used_as_asked(env):
@@ -289,30 +288,53 @@ def test_a_model_with_half_or_more_left_is_used_as_asked(env):
     assert model_of(fake.calls[0]) == "gemini-4-argon-high" and "model_swapped_from" not in result
 
 
-def test_when_every_model_is_low_the_one_with_most_left_is_used(env):
-    for name, left in (("hydrogen", 30), ("argon", 19), ("flash", 40)):
-        agy.record_agy_quota(name, left, env)
+def test_flash_asked_for_bulk_text_stays_flash_while_gemini_is_fine(env):
     fake = FakeAgy()
-    go({"goal": "x", "repo": repo(env)}, env, fake)
+    go({"goal": "x", "repo": repo(env), "model": "gemini-3.8-flash-high"}, env, fake)
     assert model_of(fake.calls[0]) == "gemini-3.8-flash-high"
 
 
-def test_a_reading_older_than_a_week_no_longer_counts(env):
-    """Google's quotas are weekly: a week-old 19% says nothing about today."""
-    agy.record_agy_quota("hydrogen", 10, env, now=0)
+def test_when_every_bucket_is_low_the_one_with_most_left_is_used(env):
+    agy.record_agy_quota("gemini", 30, env)
+    agy.record_agy_quota("argon", 40, env)
+    fake = FakeAgy()
+    go({"goal": "x", "repo": repo(env)}, env, fake)
+    assert model_of(fake.calls[0]) == "gemini-4-argon-high"
+
+
+def test_a_reading_expires_when_its_quota_refreshes(env):
+    """The quota page says when each bucket refreshes; after that the reading says nothing."""
+    agy.record_agy_quota("argon", 18.74, env, refresh_hours=157, now=0)
+    assert agy.agy_quota_left(env, now=156 * 3600) == {"argon": 0.1874}
+    assert agy.agy_quota_left(env, now=158 * 3600) == {}
+
+
+def test_a_reading_without_a_refresh_time_lasts_a_week(env):
+    agy.record_agy_quota("gemini", 10, env, now=0)
     assert agy.agy_quota_left(env, now=8 * 86400) == {}
 
 
-def test_running_out_of_quota_falls_back_down_the_chain_and_remembers_it(env):
-    agy.record_agy_quota("argon", 19, env)
-    fake = OutOfQuota("hydrogen")
+def test_running_out_mid_task_moves_to_the_other_bucket_and_marks_it_empty_for_five_hours(env):
+    """A quota error may be the 5-hour limit, so the bucket is only marked empty for 5 hours."""
+    fake = OutOfQuota("gemini")
     result = go({"goal": "x", "repo": repo(env)}, env, fake)
-    assert [model_of(c) for c in fake.calls] == ["gemini-4-hydrogen-high", "gemini-3.8-flash-high"]  # argon is protected
-    assert result["fallback_from"] == "gemini-4-hydrogen-high"
-    assert agy.agy_quota_left(env)["hydrogen"] == 0
+    assert [model_of(c) for c in fake.calls] == ["gemini-4-hydrogen-high", "gemini-4-argon-high"]
+    assert fake.calls[0]["cwd"] == fake.calls[1]["cwd"]
+    assert result["status"] == "done" and result["fallback_from"] == "gemini-4-hydrogen-high"
+    import time
+    assert agy.agy_quota_left(env)["gemini"] == 0
+    assert agy.agy_quota_left(env, now=time.time() + 6 * 3600) == {}
+
+
+def test_when_both_buckets_are_out_the_error_is_returned(env):
+    fake = OutOfQuota("gemini", "argon")
+    result = go({"goal": "x", "repo": repo(env)}, env, fake)
+    assert len(fake.calls) == 2 and result["status"] == "error"
 
 
 def test_agy_quota_can_be_recorded_from_the_command_line(env, monkeypatch, capsys):
     monkeypatch.setattr(agy, "Paths", lambda: env)
-    assert agy.main(["agy-quota", "argon", "19"]) == 0
-    assert json.loads(capsys.readouterr().out)["argon"]["left"] == 0.19
+    assert agy.main(["agy-quota", "argon", "18.74", "157"]) == 0
+    assert json.loads(capsys.readouterr().out)["argon"]["left"] == 0.1874
+    assert agy.main(["agy-quota", "hydrogen", "99"]) == 0  # Hydrogen and Flash are names of the gemini bucket
+    assert "gemini" in json.loads(capsys.readouterr().out)

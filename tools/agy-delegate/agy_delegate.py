@@ -4,9 +4,9 @@ The limits live in this code, not in the model (skill: skills/coding/agy-delegat
 - A repo task runs in a fresh git worktree on branch `agy/<run-id>`; the original working tree is never touched.
   A task without a repo runs in its own folder with copies of its input files.
 - agy always runs with `--sandbox`, a JSON schema for its answer, a time limit and an allowed model.
-  Each model family (Hydrogen, Argon + the Orchestrator, 3.8 Flash) has its own weekly quota in agy. Below 50% left
-  (recorded with `agy-quota`) a family is protected: the task moves to one with more left. On a quota error the task
-  continues on the next family in the chain in the same folder, and that family is recorded as empty.
+  agy has two quota buckets: "gemini" (Hydrogen + 3.8 Flash) and "argon" (Argon + the Orchestrator), each with a weekly
+  and a 5-hour limit. Below 50% left (recorded with `agy-quota`) a bucket is protected: the task moves to the other one.
+  On a quota error the task continues on the other bucket in the same folder; the empty one is skipped for 5 hours.
 - Changed files are read from git / the folder, not from the model. This script runs outside the caller's sandbox,
   so it never runs arbitrary commands: the caller re-runs the verify command in its own sandbox.
 - `wiki: read|write` adds Eric's LLM Wiki and the llm-wiki skill; wiki edits are listed after the run.
@@ -17,7 +17,8 @@ Usage:
   agy-delegate watch <run-id>                 follow a run's progress (what the Rex pane shows)
   agy-delegate cleanup <run-id>               remove a run's worktree/branch or folder
   agy-delegate quota                          Claude's last known quota use and the mode it implies
-  agy-delegate agy-quota [<family> <left%>]   show or record how much of a model family's weekly agy quota is left
+  agy-delegate agy-quota [<bucket> <left%> [<refresh-hours>]]
+                                              show or record how much of a bucket's weekly agy quota is left
   agy-delegate statusline                     Claude Code statusLine command: shows quota use and records it
 """
 import json
@@ -42,9 +43,9 @@ ORCHESTRATOR = "gemini-pro-orchestrator-g1-pro"  # agy's Orchestrator (Argon): p
 MODELS.add(ORCHESTRATOR)
 ARGON = {f"gemini-4-argon-{e}" for e in ("low", "medium", "high")} | {ORCHESTRATOR}  # Argon's own quota
 DEFAULT_MODEL = "gemini-4-hydrogen-high"  # Eric 2026-11-18: Hydrogen first (his plan has little Argon); Flash for bulk text
-CHAIN = ("gemini-4-hydrogen-high", "gemini-4-argon-high", "gemini-3.8-flash-high")  # who takes over, in order
-PROTECT = 0.5  # Eric 2026-11-18: below half of a weekly quota left, protect that model instead of using it up
-WEEK = 7 * 86400
+CHAIN = ("gemini-4-hydrogen-high", "gemini-4-argon-high")  # one model per quota bucket, in order of preference
+PROTECT = 0.5  # Eric 2026-11-18: below half of a weekly quota left, protect that bucket instead of using it up
+WEEK, FIVE_HOURS = 7 * 86400, 5 * 3600
 QUOTA_ERROR = re.compile(r"quota|exhaust|rate.?limit|limit (reached|exceeded)|\b429\b", re.IGNORECASE)
 DEFAULT_MINUTES, MAX_MINUTES = 30, 60
 SECRET_PARTS = (".env", ".ssh", "credentials", ".pem", ".key", ".p12", "id_rsa", "token", "secret")
@@ -270,13 +271,13 @@ def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: O
         result["model_swapped_from"] = spec["model"]
         spec = {**spec, "model": chosen}
     result |= _call(spec, prompt, workdir, paths, runner, log)
-    first, tried = spec["model"], {family(spec["model"])}
+    first, tried = spec["model"], {bucket(spec["model"])}
     while result["status"] == "error" and QUOTA_ERROR.search(result.get("error", "")):
-        record_agy_quota(family(spec["model"]), 0, paths)
+        record_agy_quota(bucket(spec["model"]), 0, paths, refresh_hours=FIVE_HOURS / 3600)  # may be the 5-hour limit
         nxt = _next_model(tried, agy_quota_left(paths))
         if nxt is None:
             break
-        tried.add(family(nxt))
+        tried.add(bucket(nxt))
         _log(log, {"event": "fallback", "from": spec["model"], "to": nxt})
         spec = {**spec, "model": nxt}
         if "（换了模型接着做" not in prompt:
@@ -332,7 +333,7 @@ def describe(event: dict) -> str | None:
     if kind == "fallback":
         return f"⚠️ {event['from']} 额度用完，换 {event['to']} 接着做"
     if kind == "protected":
-        return f"🛡️ {event['from']} 周额度剩不到一半，留着；改用 {event['to']}"
+        return f"🛡️ {event['from']} 的额度剩不到一半，留着；改用 {event['to']}"
     if kind == "finished":
         files = ", ".join(event.get("files_changed") or []) or "无"
         return f"🏁 结束：{event.get('status')} · 改动文件：{files}"
@@ -373,30 +374,38 @@ def watch(run_id: str, paths: Paths = Paths(), follow: bool = True, out=sys.stdo
             return
 
 
-# ---- agy quota (per model family, weekly) ----------------------------------------------------------------------------
+# ---- agy quota (per bucket, as agy's quota page groups them) ---------------------------------------------------------
 
-def family(model: str) -> str:
-    return "argon" if model in ARGON else "hydrogen" if "hydrogen" in model else "flash"
+BUCKETS = {"gemini": "gemini", "hydrogen": "gemini", "flash": "gemini", "argon": "argon"}  # names accepted -> bucket
+
+
+def bucket(model: str) -> str:
+    return "argon" if model in ARGON else "gemini"
 
 
 def agy_quota_left(paths: Paths = Paths(), now: float | None = None) -> dict[str, float]:
-    """Share of each family's weekly quota left, from readings younger than a week. Unknown families are absent."""
+    """Share of each bucket's quota left, from readings that have not expired. Unknown buckets are absent."""
     try:
         data = json.loads(paths.agy_quota.read_text())
     except (OSError, ValueError):
         return {}
     now = time.time() if now is None else now
-    return {name: float(v["left"]) for name, v in data.items() if isinstance(v, dict) and now - v.get("seen_at", 0) < WEEK}
+    return {name: float(v["left"]) for name, v in data.items()
+            if isinstance(v, dict) and now < v.get("expires_at", v.get("seen_at", 0) + WEEK)}
 
 
-def record_agy_quota(name: str, left_percent: float, paths: Paths = Paths(), now: float | None = None) -> dict:
-    if name not in ("hydrogen", "argon", "flash") or not 0 <= float(left_percent) <= 100:
-        raise TaskError("用法：agy-quota <hydrogen|argon|flash> <剩余百分比 0-100>")
+def record_agy_quota(name: str, left_percent: float, paths: Paths = Paths(), refresh_hours: float | None = None,
+                     now: float | None = None) -> dict:
+    """Record what agy's quota page shows; the reading expires when the page says the bucket refreshes (default a week)."""
+    if name not in BUCKETS or not 0 <= float(left_percent) <= 100:
+        raise TaskError("用法：agy-quota <gemini|argon> <剩余百分比 0-100> [几小时后刷新]（hydrogen、flash 都算 gemini）")
     try:
         data = json.loads(paths.agy_quota.read_text())
     except (OSError, ValueError):
         data = {}
-    data[name] = {"left": round(float(left_percent) / 100, 4), "seen_at": int(time.time() if now is None else now)}
+    now = time.time() if now is None else now
+    expires = now + (float(refresh_hours) * 3600 if refresh_hours is not None else WEEK)
+    data[BUCKETS[name]] = {"left": round(float(left_percent) / 100, 4), "seen_at": int(now), "expires_at": int(expires)}
     paths.agy_quota.parent.mkdir(parents=True, exist_ok=True)
     tmp = paths.agy_quota.with_name(f".{paths.agy_quota.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(data))
@@ -409,16 +418,16 @@ def _ok(name: str, left: dict[str, float]) -> bool:
 
 
 def choose_model(model: str, left: dict[str, float]) -> str:
-    """The asked model if its family has half or more left; else the first in CHAIN that has; else the one with most left."""
-    if _ok(family(model), left):
+    """The asked model if its bucket has half or more left; else the first in CHAIN that has; else the one with most left."""
+    if _ok(bucket(model), left):
         return model
-    return next((m for m in CHAIN if _ok(family(m), left)), max(CHAIN, key=lambda m: left.get(family(m), 1.0)))
+    return next((m for m in CHAIN if _ok(bucket(m), left)), max(CHAIN, key=lambda m: left.get(bucket(m), 1.0)))
 
 
 def _next_model(tried: set[str], left: dict[str, float]) -> str | None:
-    """After a quota error: the next untried family in CHAIN, protected ones last."""
-    rest = [m for m in CHAIN if family(m) not in tried and left.get(family(m), 1.0) > 0]
-    return next((m for m in rest if _ok(family(m), left)), rest[-1] if rest else None)
+    """After a quota error: the model of a bucket not tried yet that still has something left, protected ones last."""
+    rest = [m for m in CHAIN if bucket(m) not in tried and left.get(bucket(m), 1.0) > 0]
+    return next((m for m in rest if _ok(bucket(m), left)), rest[-1] if rest else None)
 
 
 # ---- Claude quota ----------------------------------------------------------------------------------------------------
@@ -481,7 +490,7 @@ def main(argv: list[str]) -> int:
         if argv[0] == "agy-quota":
             paths = Paths()
             if len(argv) > 1:
-                record_agy_quota(argv[1], float(argv[2]), paths)
+                record_agy_quota(argv[1], float(argv[2]), paths, float(argv[3]) if len(argv) > 3 else None)
             print(json.dumps({name: {"left": left} for name, left in agy_quota_left(paths).items()}, ensure_ascii=False))
             return 0
         if argv[0] == "watch":
