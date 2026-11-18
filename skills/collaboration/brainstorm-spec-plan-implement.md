@@ -19,12 +19,12 @@ Most rework comes from skipping the front of the pipeline. The stages are short;
 
 ### 1. Brainstorm
 - Goal: align on **intent and requirements** before any structure. One question at a time. Surface assumptions.
-- Owner skill: `vendored/superpowers-brainstorming.md` (on Claude Code, prefer the live `superpowers:brainstorming` plugin if installed).
+- Owner skill: this skill. Keep the discussion lightweight, but do not move into implementation until intent, constraints, and the chosen approach are clear.
 - Output: a shared understanding of *what success looks like* and *which approach* (out of 2–3 alternatives) the user picked.
 
 ### 2. Spec
 - Goal: write the design decisions down so they survive across sessions.
-- Output: a design doc, typically at `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`.
+- Output: a design doc, typically at `docs/specs/YYYY-MM-DD-<topic>-design.md`.
 - Self-review the spec for placeholders, contradictions, and ambiguity before handing it to the user.
 
 ### 3. Plan
@@ -34,7 +34,7 @@ Most rework comes from skipping the front of the pipeline. The stages are short;
 
 ### 4. Implement
 - Goal: execute the plan one step at a time.
-- Owner skill: `tdd-workflow` (this repo) for code work; `vendored/superpowers-executing-plans.md` for general execution discipline.
+- Owner skill: `tdd-workflow` (this repo) for code work; for non-code execution, follow the approved plan step by step and verify each checkpoint.
 - Default: one git commit per step. After each step, the plan should still be the source of truth — if you discover the plan is wrong, update the plan before continuing.
 
 ### 5. Verify

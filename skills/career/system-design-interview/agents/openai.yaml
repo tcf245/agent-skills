@@ -1,0 +1,4 @@
+interface:
+  display_name: "System Design Interview"
+  short_description: "Turn a one-line prompt into an interview-grade system design saved to the wiki"
+  default_prompt: "Use $system-design-interview to design a stock trading system."

@@ -11,6 +11,14 @@ triggers:
   - "durable knowledge"
   - "conversation produces reusable knowledge"
   - "conversation-native INGEST"
+  - "错题本"
+  - "错题"
+  - "错题整理"
+  - "错题复盘"
+  - "逐题讲解"
+  - "题目截图"
+  - "复盘模拟题"
+  - "低自信题"
 platforms: [cc, codex, gemini]
 ---
 
@@ -60,6 +68,14 @@ Do not capture when the result is only:
 If the value is obvious and enough context is present, perform the capture. If
 the value is plausible but borderline, briefly propose the capture and ask for
 confirmation. Prefer fewer, higher-signal pages over noisy accumulation.
+
+## Exam-question override
+
+For IPA SG or other exam-question sessions, use a lower capture threshold. A
+question is capture-worthy not only when Eric got it wrong, but also when he
+got it right by guessing, asked what a term means, misunderstood the Japanese
+sentence, or needed an explanation of multiple options. Update the existing
+exam error-bank record rather than creating a new page for every question.
 
 ## Procedure
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Resume Coach"
+  short_description: "Review and improve resumes with verified Google Docs edits"
+  default_prompt: "Use $resume-coach to review my current resume and propose the highest-impact improvements."

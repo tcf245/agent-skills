@@ -25,17 +25,10 @@ Recommended cadence: **quarterly**, or sooner if upstream announces a major chan
    - Eyeball-diff the result; commit with a message referencing the upstream version bump.
 3. Update the snapshot date in this README.
 
-## Currently vendored (as of 2026-05-12)
+## Currently vendored (as of 2026-07-04)
 
 | File | Upstream | Version | License |
 |------|----------|---------|---------|
-| `superpowers-brainstorming.md` | `superpowers:brainstorming` | 5.0.7 | MIT © 2025 Jesse Vincent |
-| `superpowers-writing-plans.md` | `superpowers:writing-plans` | 5.0.7 | MIT © 2025 Jesse Vincent |
-| `superpowers-executing-plans.md` | `superpowers:executing-plans` | 5.0.7 | MIT © 2025 Jesse Vincent |
-| `superpowers-tdd.md` | `superpowers:test-driven-development` | 5.0.7 | MIT © 2025 Jesse Vincent |
-| `superpowers-verification.md` | `superpowers:verification-before-completion` | 5.0.7 | MIT © 2025 Jesse Vincent |
-| `superpowers-debugging.md` | `superpowers:systematic-debugging` | 5.0.7 | MIT © 2025 Jesse Vincent |
-| `superpowers-using-git-worktrees.md` | `superpowers:using-git-worktrees` | 5.0.7 | MIT © 2025 Jesse Vincent |
 | `karpathy-guidelines.md` | `andrej-karpathy-skills:karpathy-guidelines` | 1.0.0 | MIT © 2025 Andrej Karpathy |
 
 ## Full MIT license notice (applies to all vendored files)
@@ -43,7 +36,6 @@ Recommended cadence: **quarterly**, or sooner if upstream announces a major chan
 ```
 MIT License
 
-Copyright (c) 2025 Jesse Vincent (superpowers)
 Copyright (c) 2025 Andrej Karpathy (karpathy-skills)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy

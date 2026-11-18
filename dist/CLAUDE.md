@@ -24,6 +24,14 @@ Do not paraphrase the rules from memory. Read the skill file fresh each time —
 
 ### Coding workflows
 
+- `skills/coding/agy-delegation.md`
+  - **name**: agy-delegation
+  - **triggers**: "交给 agy", "委托给 agy", "用 agy", "delegate to agy", "batch task", "批量", "大量文件", "quota is running low", "额度不够"
+  - **summary**: Use when a task has a big, well-scoped execution part (batch edits across many files, i18n/translation, bulk text, writing tests, collecting and drafting from the wiki) or when Claude's quota is past 50%. Hand that part to agy (Gemini through Google's official Antigravity CLI) with the `agy-delegate` tool; you judge, write the task, and verify.
+- `skills/coding/jev-prefilter.md`
+  - **name**: jev-prefilter
+  - **triggers**: "many search results", "long log", "find the relevant", "which of these", "triage", "wiki INGEST / LINT"
+  - **summary**: Use when a task would load many items or a long text into context only to judge which parts matter (search results, log files, file lists, wiki pages). Send the bulk to Jev with the `jev` CLI and read only its short result.
 - `skills/coding/plan-mode.md`
   - **name**: plan-mode
   - **triggers**: "/plan", "make a plan", "design a plan", "plan this out", "before implementing"
@@ -75,13 +83,13 @@ Do not paraphrase the rules from memory. Read the skill file fresh each time —
 - `skills/wiki/llm-wiki.md`
   - **name**: llm-wiki
   - **triggers**: (see description)
-  - **summary**: LLM Wiki knowledge base management skill for Eric's personal Obsidian vault. Trigger when the user says INGEST / LINT / GRAPH / CAPTURE, drops a new raw article or file to process, asks to add something to the wiki, wants a health check, or when conversation produces a valuable insight worth archiving. Also trigger on: "add to wiki", "save to knowledge base", "update wiki", "run INGEST", "run LINT", "is X in the wiki", "clean up the knowledge base", "加到 wiki", "存到知识库", "更新 wiki", "做 INGEST", "跑 LINT".
+  - **summary**: LLM Wiki knowledge base management skill for Eric's personal Obsidian vault. Trigger when the user says INGEST / LINT / GRAPH / CAPTURE, drops a new raw article or file to process, asks to add something to the wiki, wants a health check, or when conversation produces a valuable insight worth archiving. Also trigger on: "add to wiki", "save to knowledge base", "update wiki", "run INGEST", "run LINT", "is X in the wiki", "clean up the knowledge base", "加到 wiki", "存到知识库", "更新 wiki", "做 INGEST", "跑 LINT", "错题本", "错题", "错题记录", "错题整理", "错题复盘", "补录错题", "复盘今天的题", "复盘模拟题", "复盘真题", "过去问复盘", "逐题讲解", "把这题记下来", "记录到错题本", "今天学到的", "低自信题", "易错点", "考试截图", "题目截图", "模考复盘", "IPA SG 题目复盘".
 
 ### Obsidian LLM Wiki
 
 - `skills/obsidian-llm-wiki/capture.md`
   - **name**: obsidian-llm-wiki-capture
-  - **triggers**: "CAPTURE", "save this insight", "archive this to wiki", "this should be in the knowledge base", "valuable insight", "durable knowledge", "conversation produces reusable knowledge", "conversation-native INGEST"
+  - **triggers**: "CAPTURE", "save this insight", "archive this to wiki", "this should be in the knowledge base", "valuable insight", "durable knowledge", "conversation produces reusable knowledge", "conversation-native INGEST", "错题本", "错题", "错题整理", "错题复盘", "逐题讲解", "题目截图", "复盘模拟题", "低自信题"
   - **summary**: Use when the current conversation produces a valuable, durable insight that should be archived to the wiki, including proactively at natural stopping points after multi-turn conversations. Captures the insight as a new concept page, extends an existing one, or records a session-specific conclusion. This is the conversation-native form of INGEST.
 - `skills/obsidian-llm-wiki/graph.md`
   - **name**: obsidian-llm-wiki-graph
@@ -116,38 +124,21 @@ Do not paraphrase the rules from memory. Read the skill file fresh each time —
 
 ### Vendored third-party (non-CC platforms only)
 
-- `vendored/superpowers-brainstorming.md`
-  - **name**: brainstorming
-  - **triggers**: (see description)
-  - **summary**: You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation.
-- `vendored/superpowers-executing-plans.md`
-  - **name**: executing-plans
-  - **triggers**: (see description)
-  - **summary**: Use when you have a written implementation plan to execute in a separate session with review checkpoints
 - `vendored/karpathy-guidelines.md`
   - **name**: karpathy-guidelines
   - **triggers**: (see description)
   - **summary**: Behavioral guidelines to reduce common LLM coding mistakes. Use when writing, reviewing, or refactoring code to avoid overcomplication, make surgical changes, surface assumptions, and define verifiable success criteria.
-- `vendored/superpowers-debugging.md`
-  - **name**: systematic-debugging
+
+### Career
+
+- `skills/career/resume-coach/SKILL.md`
+  - **name**: resume-coach
   - **triggers**: (see description)
-  - **summary**: Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes
-- `vendored/superpowers-tdd.md`
-  - **name**: test-driven-development
-  - **triggers**: (see description)
-  - **summary**: Use when implementing any feature or bugfix, before writing implementation code
-- `vendored/superpowers-using-git-worktrees.md`
-  - **name**: using-git-worktrees
-  - **triggers**: (see description)
-  - **summary**: Use when starting feature work that needs isolation from current workspace or before executing implementation plans - creates isolated git worktrees with smart directory selection and safety verification
-- `vendored/superpowers-verification.md`
-  - **name**: verification-before-completion
-  - **triggers**: (see description)
-  - **summary**: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
-- `vendored/superpowers-writing-plans.md`
-  - **name**: writing-plans
-  - **triggers**: (see description)
-  - **summary**: Use when you have a spec or requirements for a multi-step task, before touching code
+  - **summary**: Review, rewrite, tailor, and maintain Eric's technical resume or CV. Use when Eric asks for a resume review, 简历优化, summary or experience-bullet rewrites, quantified achievement framing, ATS or English checks, job-specific tailoring, or verified updates to his main Google Doc resume.
+- `skills/career/system-design-interview/SKILL.md`
+  - **name**: system-design-interview
+  - **triggers**: "system design", "系统设计", "SD 课题", "设计一个.*系统", "如何设计", "design a .* system", "system design interview"
+  - **summary**: Use when Eric gives a one-line system design prompt ("设计一个股票交易系统", "design a rate limiter", "SD 课题") and wants a complete interview-grade design. Produces a design that survives follow-up questions, two polished diagrams, and saves it to the LLM Wiki as a concept page plus a dated record. Trigger on 系统设计, System Design, SD 课题, 设计一个…系统, 如何设计, 面试设计题, or "design a ... system".
 
 ## Maintenance
 

@@ -23,7 +23,7 @@ If you switch between agents, each one forgets your conventions: how you plan, w
 | **Diagram** | `fireworks-tech-graph` | technical diagrams, SVG+PNG export |
 | **Obsidian LLM Wiki** | `methodology`, `ingest`, `lint`, `graph`, `capture` | `INGEST`, `LINT`, `GRAPH`, `CAPTURE` |
 | **Media** | `quark-resource-search` | "find resource", "organize this folder" |
-| **Vendored (3rd party)** | `superpowers-*` (×7), `karpathy-guidelines` | various — see `dist/AGENTS.md` |
+| **Vendored (3rd party)** | `karpathy-guidelines` | code-quality guardrails |
 
 See `dist/AGENTS.md` or `dist/GEMINI.md` for the full machine-readable index.
 
@@ -41,7 +41,7 @@ Per-platform behavior:
 - Symlinks `skills/` into `~/.claude/skills/agent-skills/` (lazy-load via the `Skill` tool)
 - Splices `dist/CLAUDE.md` into `~/.claude/CLAUDE.md` (eager-load index — works on a new machine before the symlink, and survives multi-device setups via Anthropic account sync)
 - Restart Claude Code to pick up the new skills
-- For vendored content, prefer installing the original plugins (`claude plugins install superpowers` etc.) — they're always fresher than this repo's snapshot
+- For vendored content, prefer installing the original upstream plugin or skill package when one is available; it will usually be fresher than this repo's snapshot.
 
 ### Codex CLI
 - Splices `dist/AGENTS.md` into `~/.codex/AGENTS.md` (or `$CODEX_AGENTS_FILE`)
