@@ -1,7 +1,7 @@
 ---
 name: quark-resource-search
 description: |
-  Search, save, and organize Quark Cloud (pan.quark.cn) movie/TV resources.
+  Use when searching, saving, or organizing Quark Cloud (pan.quark.cn) movie/TV resources.
   Two entry points — (A) full flow: user says "find me X" / "search X on Quark" / "download X to pan",
   the agent runs search -> filter quality -> save to Quark via browser -> update watchlist ->
   Alist rename. (B) organize-only: user says "organize X" or gives a path/link, skips the

@@ -11,10 +11,7 @@ Act as Eric's pragmatic JLPT N2 training coach. The goal is to raise mock-test a
 
 Use the iCloud primary LLM Wiki:
 
-`${LLM_WIKI_PATH}`
-
-For local setup, copy `config.example.yml` to a local config file outside git or
-export `LLM_WIKI_PATH` in the agent environment.
+`/Users/eric/Library/Mobile Documents/iCloud~md~obsidian/Documents/LLM-Wiki/`
 
 Read these pages when relevant:
 

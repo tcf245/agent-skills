@@ -1,59 +1,154 @@
 #!/usr/bin/env bash
-# Install agent-skills into the target platform's config location.
-# Usage: ./scripts/install.sh <cc|codex|gemini|all>
+# Install agent-skills into ~/.agents/skills, ~/.claude/skills, ~/.gemini/skills,
+# and splice the minimal always-on block into CLAUDE.md, AGENTS.md, and GEMINI.md.
 #
-# Env vars:
-#   AGENT_SKILLS_HOME  — where to publish a stable copy of skills/ and vendored/
-#                        (default: ~/.config/agent-skills)
-#   CODEX_AGENTS_FILE  — override Codex target (default: ~/.codex/AGENTS.md)
-#   GEMINI_AGENTS_FILE — override Gemini target (default: ~/.gemini/GEMINI.md)
-#   CC_SKILLS_DIR      — override CC target (default: ~/.claude/skills)
+# Usage: ./scripts/install.sh [--dry-run] [all|cc|codex|gemini]
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-AGENT_SKILLS_HOME="${AGENT_SKILLS_HOME:-$HOME/.config/agent-skills}"
+AGENTS_SKILLS_DIR="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
+CC_SKILLS_DIR="${CC_SKILLS_DIR:-$HOME/.claude/skills}"
+GEMINI_SKILLS_DIR="${GEMINI_SKILLS_DIR:-$HOME/.gemini/skills}"
+CC_CLAUDE_FILE="${CC_CLAUDE_FILE:-$HOME/.claude/CLAUDE.md}"
 CODEX_AGENTS_FILE="${CODEX_AGENTS_FILE:-$HOME/.codex/AGENTS.md}"
 GEMINI_AGENTS_FILE="${GEMINI_AGENTS_FILE:-$HOME/.gemini/GEMINI.md}"
-CC_SKILLS_DIR="${CC_SKILLS_DIR:-$HOME/.claude/skills}"
-CC_CLAUDE_FILE="${CC_CLAUDE_FILE:-$HOME/.claude/CLAUDE.md}"
+LEGACY_CC_LINK="$CC_SKILLS_DIR/agent-skills"
+LEGACY_CONFIG_DIR="${AGENT_SKILLS_HOME:-$HOME/.config/agent-skills}"
+TODAY="$(date +%Y%m%d)"
+REPLACED_DIR="$AGENTS_SKILLS_DIR/.replaced-$TODAY"
 
-PLATFORM="${1:-}"
+DRY_RUN=0
+PLATFORM="all"
 
-# --- helpers ----------------------------------------------------------------
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run|-n)
+      DRY_RUN=1
+      ;;
+    all|cc|codex|gemini)
+      PLATFORM="$arg"
+      ;;
+    -h|--help)
+      cat <<USAGE
+Usage: $0 [--dry-run] [all|cc|codex|gemini]
 
-log() { printf '[install] %s\n' "$*"; }
-die() { printf '[install] ERROR: %s\n' "$*" >&2; exit 1; }
+Installs native skill symlinks and minimal agent config blocks:
+  1. For each skill dir under skills/ containing SKILL.md:
+     - Symlinks ~/.agents/skills/<name> -> <repo>/skills/<cat>/<name>
+       (backs up any existing real directory to ~/.agents/skills/.replaced-YYYYmmdd/<name>)
+     - Symlinks ~/.claude/skills/<name> -> ~/.agents/skills/<name>
+     - Symlinks ~/.gemini/skills/<name> -> ~/.agents/skills/<name>
+  2. Removes legacy ~/.claude/skills/agent-skills and ~/.config/agent-skills if present.
+  3. Splices minimal dist/{CLAUDE,AGENTS,GEMINI}.md blocks (# === agent-skills BEGIN/END ===)
+     into ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md, and ~/.gemini/GEMINI.md.
+USAGE
+      exit 0
+      ;;
+    *)
+      printf '[install] ERROR: unknown argument: %s\n' "$arg" >&2
+      exit 1
+      ;;
+  esac
+done
 
-ensure_built() {
-  if [ ! -f "$REPO_ROOT/dist/AGENTS.md" ] || [ ! -f "$REPO_ROOT/dist/GEMINI.md" ] || [ ! -f "$REPO_ROOT/dist/CLAUDE.md" ]; then
-    log "dist/ missing — running build..."
-    "$REPO_ROOT/scripts/build.sh"
+log() {
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '[install --dry-run] %s\n' "$*"
+  else
+    printf '[install] %s\n' "$*"
   fi
 }
 
-publish_skills() {
-  # Symlink skills/ and vendored/ into AGENT_SKILLS_HOME for stable absolute paths.
-  mkdir -p "$AGENT_SKILLS_HOME"
-  ln -sfn "$REPO_ROOT/skills" "$AGENT_SKILLS_HOME/skills"
-  ln -sfn "$REPO_ROOT/vendored" "$AGENT_SKILLS_HOME/vendored"
-  log "published skills+vendored to $AGENT_SKILLS_HOME (symlinks)"
+ensure_built() {
+  if [ ! -f "$REPO_ROOT/dist/CLAUDE.md" ] || [ ! -f "$REPO_ROOT/dist/AGENTS.md" ] || [ ! -f "$REPO_ROOT/dist/GEMINI.md" ]; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      log "would run $REPO_ROOT/scripts/build.sh"
+    else
+      log "dist/ missing — running build..."
+      "$REPO_ROOT/scripts/build.sh"
+    fi
+  fi
 }
 
-rewrite_paths() {
-  # stdin: index file with relative paths "skills/..." and "vendored/..."
-  # stdout: same with absolute paths under $AGENT_SKILLS_HOME
-  sed -e "s|\`skills/|\`$AGENT_SKILLS_HOME/skills/|g" \
-      -e "s|\`vendored/|\`$AGENT_SKILLS_HOME/vendored/|g"
+cleanup_legacy() {
+  for old_path in "$LEGACY_CC_LINK" "$LEGACY_CONFIG_DIR"; do
+    if [ -L "$old_path" ] || [ -e "$old_path" ]; then
+      if [ "$DRY_RUN" -eq 1 ]; then
+        log "rm -rf $old_path"
+      else
+        rm -rf "$old_path"
+        log "removed legacy $old_path"
+      fi
+    elif [ "$DRY_RUN" -eq 1 ]; then
+      log "cleanup check (absent): $old_path"
+    fi
+  done
+}
+
+link_skill_dirs() {
+  if [ "$DRY_RUN" -eq 0 ]; then
+    mkdir -p "$AGENTS_SKILLS_DIR" "$CC_SKILLS_DIR" "$GEMINI_SKILLS_DIR"
+  else
+    log "mkdir -p $AGENTS_SKILLS_DIR $CC_SKILLS_DIR $GEMINI_SKILLS_DIR"
+  fi
+
+  while IFS= read -r skill_md; do
+    local skill_dir name agents_target
+    skill_dir="$(dirname "$skill_md")"
+    name="$(basename "$skill_dir")"
+    agents_target="$AGENTS_SKILLS_DIR/$name"
+
+    if [ -d "$agents_target" ] && [ ! -L "$agents_target" ]; then
+      if [ "$DRY_RUN" -eq 1 ]; then
+        log "mv $agents_target $REPLACED_DIR/$name"
+      else
+        mkdir -p "$REPLACED_DIR"
+        rm -rf "$REPLACED_DIR/$name"
+        mv "$agents_target" "$REPLACED_DIR/$name"
+        log "backed up real dir $agents_target -> $REPLACED_DIR/$name"
+      fi
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+      log "ln -sfn $skill_dir $agents_target"
+    else
+      ln -sfn "$skill_dir" "$agents_target"
+      log "linked $agents_target -> $skill_dir"
+    fi
+
+    for consumer_dir in "$CC_SKILLS_DIR" "$GEMINI_SKILLS_DIR"; do
+      local consumer_target="$consumer_dir/$name"
+      if [ -d "$consumer_target" ] && [ ! -L "$consumer_target" ]; then
+        local consumer_backup="$consumer_dir/.replaced-$TODAY"
+        if [ "$DRY_RUN" -eq 1 ]; then
+          log "mv $consumer_target $consumer_backup/$name"
+        else
+          mkdir -p "$consumer_backup"
+          rm -rf "$consumer_backup/$name"
+          mv "$consumer_target" "$consumer_backup/$name"
+        fi
+      fi
+      if [ "$DRY_RUN" -eq 1 ]; then
+        log "ln -sfn $agents_target $consumer_target"
+      else
+        ln -sfn "$agents_target" "$consumer_target"
+        log "linked $consumer_target -> $agents_target"
+      fi
+    done
+  done < <(find "$REPO_ROOT/skills" -name 'SKILL.md' | sort)
 }
 
 splice_into_file() {
-  # Append (or replace) the agent-skills sentinel block in $TARGET_FILE.
   local target="$1"
   local content_file="$2"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "splice $content_file -> $target (# === agent-skills BEGIN/END ===)"
+    return 0
+  fi
   mkdir -p "$(dirname "$target")"
-  local tmp="$(mktemp)"
+  local tmp
+  tmp="$(mktemp)"
   if [ -f "$target" ]; then
-    # Drop any existing block, keep the rest
     awk '
       /^# === agent-skills BEGIN ===$/ { skip=1; next }
       /^# === agent-skills END ===$/   { skip=0; next }
@@ -74,78 +169,23 @@ splice_into_file() {
   log "wrote $target"
 }
 
-# --- platform installers ----------------------------------------------------
-
-install_cc() {
-  # CC reads skills from ~/.claude/skills/<name>/SKILL.md (lazy via Skill tool)
-  # AND ~/.claude/CLAUDE.md (eager-loaded instructions / index).
-  # We install both — they're complementary:
-  #   - Symlinked skills: Skill tool can load them on demand by name
-  #   - CLAUDE.md index: works on any machine, even before the symlink is set up,
-  #     and survives switching to a CC instance without plugin access
-  ensure_built
-  publish_skills
-
-  # 1. Lazy-load path: skill files reachable via Skill tool
-  mkdir -p "$CC_SKILLS_DIR"
-  ln -sfn "$REPO_ROOT/skills" "$CC_SKILLS_DIR/agent-skills"
-  log "CC: linked $CC_SKILLS_DIR/agent-skills -> $REPO_ROOT/skills"
-
-  # 2. Index: splice into ~/.claude/CLAUDE.md with absolute paths
-  local tmp="$(mktemp)"
-  rewrite_paths < "$REPO_ROOT/dist/CLAUDE.md" > "$tmp"
-  splice_into_file "$CC_CLAUDE_FILE" "$tmp"
-  rm -f "$tmp"
-
-  log "CC: restart Claude Code to pick up the symlinked skills"
-}
-
-install_codex() {
-  ensure_built
-  publish_skills
-  local tmp="$(mktemp)"
-  rewrite_paths < "$REPO_ROOT/dist/AGENTS.md" > "$tmp"
-  splice_into_file "$CODEX_AGENTS_FILE" "$tmp"
-  rm -f "$tmp"
-  log "Codex: AGENTS.md updated"
-}
-
-install_gemini() {
-  ensure_built
-  publish_skills
-  local tmp="$(mktemp)"
-  rewrite_paths < "$REPO_ROOT/dist/GEMINI.md" > "$tmp"
-  splice_into_file "$GEMINI_AGENTS_FILE" "$tmp"
-  rm -f "$tmp"
-  log "Gemini: GEMINI.md updated"
-}
+ensure_built
+cleanup_legacy
+link_skill_dirs
 
 case "$PLATFORM" in
-  cc)     install_cc ;;
-  codex)  install_codex ;;
-  gemini) install_gemini ;;
-  all)    install_cc; install_codex; install_gemini ;;
-  ""|-h|--help)
-    cat <<USAGE
-Usage: $0 <cc|codex|gemini|all>
-
-Installs agent-skills into the named platform's config location.
-
-  cc      Symlinks skills/ into \$CC_SKILLS_DIR (default: ~/.claude/skills)
-  codex   Splices dist/AGENTS.md into \$CODEX_AGENTS_FILE (default: ~/.codex/AGENTS.md)
-  gemini  Splices dist/GEMINI.md into \$GEMINI_AGENTS_FILE (default: ~/.gemini/GEMINI.md)
-  all     Run all three.
-
-A stable copy of skills/+vendored/ is published as symlinks under
-\$AGENT_SKILLS_HOME (default: ~/.config/agent-skills) so the AGENTS.md
-references resolve to absolute paths that survive cwd changes.
-
-Re-running this is idempotent: existing # === agent-skills BEGIN/END ===
-blocks in target files are replaced, not duplicated.
-USAGE
-    exit 0
+  cc)
+    splice_into_file "$CC_CLAUDE_FILE" "$REPO_ROOT/dist/CLAUDE.md"
     ;;
-  *)
-    die "unknown platform: $PLATFORM (try: cc / codex / gemini / all)"
+  codex)
+    splice_into_file "$CODEX_AGENTS_FILE" "$REPO_ROOT/dist/AGENTS.md"
+    ;;
+  gemini)
+    splice_into_file "$GEMINI_AGENTS_FILE" "$REPO_ROOT/dist/GEMINI.md"
+    ;;
+  all)
+    splice_into_file "$CC_CLAUDE_FILE" "$REPO_ROOT/dist/CLAUDE.md"
+    splice_into_file "$CODEX_AGENTS_FILE" "$REPO_ROOT/dist/AGENTS.md"
+    splice_into_file "$GEMINI_AGENTS_FILE" "$REPO_ROOT/dist/GEMINI.md"
     ;;
 esac

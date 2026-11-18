@@ -1,6 +1,6 @@
 """Hand one well-scoped task to agy (Gemini through Google's official Antigravity CLI); Claude judges and verifies.
 
-The limits live in this code, not in the model (skill: skills/coding/agy-delegation.md):
+The limits live in this code, not in the model (skill: skills/coding/agy-delegation/SKILL.md):
 - A repo task runs in a fresh git worktree on branch `agy/<run-id>`; the original working tree is never touched.
   A task without a repo runs in its own folder with copies of its input files.
 - agy always runs with `--sandbox`, a JSON schema for its answer, a time limit and an allowed model.

@@ -19,15 +19,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Lint (sensitive data + frontmatter)
+      - name: Lint (sensitive data + native frontmatter)
         run: ./scripts/lint.sh
 
-      - name: Build dist/
-        run: ./scripts/build.sh
+      - name: Verify dist/ is in sync with skills/
+        run: python3 ./scripts/build.py --check
 
-      - name: Verify dist/ is up to date
+      - name: Dry-run install
         run: |
-          if ! git diff --exit-code dist/; then
-            echo "::error::dist/ is out of sync with skills/. Run ./scripts/build.sh locally and commit." >&2
-            exit 1
-          fi
+          mkdir -p /tmp/agy-home
+          HOME=/tmp/agy-home ./scripts/install.sh --dry-run all

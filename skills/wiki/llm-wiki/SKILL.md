@@ -23,18 +23,15 @@ Operating protocol for Eric's personal Obsidian knowledge base, built on Andrej 
 ## Vault Location
 
 ```
-iCloud primary:    ${LLM_WIKI_PATH}
-Workspace mirror:  ${LLM_WIKI_MIRROR_PATH}    ← snapshot/mirror side, not the primary write target
-Git repo:          ${LLM_WIKI_REPO_PATH}      (tracks snapshot/Notes/)
-Snapshot script:   ${LLM_WIKI_SNAPSHOT_SCRIPT}  (launchd, runs daily at 23:00)
+iCloud primary:    /Users/eric/Library/Mobile Documents/iCloud~md~obsidian/Documents/LLM-Wiki/
+Workspace mirror:  ~/workspace/obsidian-notes/Notes/    ← snapshot/mirror side, not the primary write target
+Git repo:          ~/workspace/obsidian-notes/           (tracks snapshot/Notes/)
+Snapshot script:   ~/workspace/obsidian-notes/bin/snapshot.sh  (launchd, runs daily at 23:00)
 ```
 
 > **Never run snapshot.sh manually** unless the user explicitly asks.
 >
 > **Read/write priority:** use the iCloud primary vault first for normal wiki operations. Use the workspace path only when working with the git-tracked snapshot/mirror or repo-local scripts.
-
-For local setup, copy `config.example.yml` to a local config file outside git or
-export the variables above in the agent environment.
 
 ---
 
@@ -58,6 +55,8 @@ Goal: build a global view with minimum tokens. **Scan index.md first, load indiv
 |---|---|---|
 | `bash bin/lint.sh` | Automated checks: broken links, missing frontmatter, index sync, orphans, `.md.md` | Before any LINT session — run first, pass report to LLM |
 | `bash bin/ingest-pending.sh` | Lists raw/ files not yet ingested | Before INGEST — find what needs processing |
+| `python3 bin/jev_wiki.py related "raw/<file>.md"` | Jev ranks every `index.md` entry against the raw source; prints ≤10 pages to update or link | INGEST — instead of reading all of `index.md` |
+| `python3 bin/jev_wiki.py status-audit` | Jev scores every `status: refined` page's completeness; prints the ones that read like stubs | LINT — status-honesty check |
 | `python3 attachments/diagrams/generate_canvas.py` | Regenerate architecture canvas | GRAPH only — never auto-run |
 | `bash bin/snapshot.sh` | Sync iCloud vault to git | **Never run manually** — launchd runs at 23:00 |
 
@@ -83,7 +82,8 @@ wiki. Use **CAPTURE** for insights that emerge inside the current conversation
 and **INGEST** for processing saved external/raw sources. When a conversation
 produces durable knowledge, treat it as a CAPTURE-style INGEST: distill the
 conversation result directly into the wiki without requiring a separate raw
-file.
+file. Strip conversational scaffolding and write standalone documentation
+(`status: refined` when the insight is already clear); never link to chat URLs.
 
 ### Automatic conversation-capture hook
 
@@ -111,6 +111,12 @@ context is present, perform the capture. If it is borderline, briefly propose it
 and ask for confirmation. Prefer fewer, higher-signal pages over noisy
 accumulation.
 
+**Exam-question override:** For IPA SG or other exam-question sessions, use a
+lower capture threshold. Capture not only wrong answers, but also lucky guesses,
+unfamiliar terms, misunderstood Japanese sentences, or multi-option explanations
+into the existing exam error-bank record rather than creating a new page per
+question.
+
 ---
 
 ## INGEST — Step by Step
@@ -118,6 +124,12 @@ accumulation.
 1. **Check pending**: `bash bin/ingest-pending.sh` — see which raw files need processing
 2. Read `raw/<source-file>` — never modify it
 3. Identify entities (specific things) and concepts (patterns / theories)
+   - **Find existing pages with Jev first**: `python3 bin/jev_wiki.py related "raw/<file>.md"`.
+     Score ≈3 = same topic (update that page), ≈2 = neighbour (link to it). Open only those
+     pages; do not load the whole `index.md` just to look for overlaps. Still check `index.md`
+     by name (grep) before creating a page, in case Jev missed a near-duplicate.
+     If Jev is down the script falls back to keyword overlap (`"via": "keyword-fallback"`),
+     which misses semantic matches, so then skim the relevant `index.md` section as well.
 4. For each item:
    - **Create new** or **update existing** page in `wiki/entities/` or `wiki/concepts/` or `wiki/records/`
    - Write YAML frontmatter (see Schema section below)
@@ -131,8 +143,9 @@ accumulation.
    - Source: raw/filename.md
    ```
 
-### Updating an existing page vs creating new
+### Routing & updating an existing page vs creating new
 
+- **Three-layer routing**: time-bound session/event → `wiki/records/YYYY-MM[-DD] <topic>.md`; named concrete thing → `wiki/entities/`; abstract idea → `wiki/concepts/`. `records` may link to `concepts` and `entities`, never the reverse (keep `concepts`/`entities` timeless and free of personal context).
 - **Record pages** (e.g. interview prep, ongoing projects): **update in place** — append new sections, update status table, do not create duplicates
 - **Concept/entity pages**: update if new info is additive; create new if the insight is a distinct topic
 
@@ -146,7 +159,9 @@ accumulation.
 4. **Stub rot** — any `status: stub` page untouched for 30+ days?
 5. **Index sync** — every file under `wiki/` listed in `index.md`? Every `index.md` entry actually exists?
 6. **Frontmatter completeness** — missing `title`, `tags`, `created`, or `status` on any page?
-7. **Status honesty** — pages marked `refined` that are visibly skeletal → demote to `stub`
+7. **Status honesty** — pages marked `refined` that are visibly skeletal → demote to `stub`.
+   Run `python3 bin/jev_wiki.py status-audit` and read only the pages it prints (score ≤ 1),
+   instead of opening every refined page; confirm by reading before demoting.
 8. **Double-extension bug** — any file with a `.md.md` suffix?
 9. **Contradictions** — same claim stated differently in two pages → flag for human review
 10. **Raw-source integrity** — no files under `raw/` have been modified (LLM is forbidden from touching them)
@@ -212,6 +227,7 @@ When in doubt, prefer `stub` over `refined`. Overstating maturity makes LINT les
 
 - **First mention** of any wiki-covered concept/entity in a page → add a link
 - Subsequent mentions in the same page → plain text is fine
+- **No phantom links** → every `[[wikilink]]` must resolve; create at least a `stub` page if the target does not exist yet
 - **"Related" section** at the bottom → 3–6 closest neighbors, not exhaustive
 
 ---

@@ -1,117 +1,76 @@
 # agent-skills
 
-A cross-platform skill collection for AI coding agents — write your working habits once, run them on **Claude Code**, **Codex CLI**, and **Gemini CLI**.
+Eric's personal AI agent skill collection in native Agent Skills format (`skills/<category>/<name>/SKILL.md`), discovered natively by **Claude Code**, **Codex CLI**, **pi**, and **Gemini / Antigravity (`agy`)**.
 
-If you switch between agents, each one forgets your conventions: how you plan, when you do TDD, which diagram tool to use, how you organize your notes. This repo packages those **process methodologies** as portable skill files that every agent can load.
+> **Target environment:** These skills target Eric's Mac and resolve concrete local paths (such as `/Users/eric/Library/Mobile Documents/iCloud~md~obsidian/Documents/LLM-Wiki` for the Obsidian vault). Secrets never live in this repo — they live in macOS Keychain via `keychain-secrets`.
 
 ## Design philosophy
 
-- **Methodology only, no data.** Code, notes, and secrets stay where they are. Skills only describe *how* to work.
-- **One source of truth, three platforms.** Skills are written once in Anthropic's markdown-with-frontmatter format; a build script generates `dist/AGENTS.md` (for Codex) and `dist/GEMINI.md` (for Gemini CLI). Claude Code consumes the files directly.
-- **Lazy load by default.** On every platform, the agent reads only the skill it needs for the current task, not the entire ruleset upfront. The generated index tells the agent *when* to read each file.
+- **Native discovery first.** Every skill is a directory (`skills/<category>/<name>/SKILL.md`) with a `name` matching the directory and a specific `description` telling the model when to load it.
+- **Minimal always-on prompt.** `scripts/build.py` emits a tiny 3-line block in `dist/{CLAUDE,AGENTS,GEMINI}.md` containing only the always-on `multilingual-coaching` rule plus a one-line pointer to `~/.agents/skills` — no bloated triggered-skill index.
+- **Keep prompts minimal.** Unused process skills and community duplicates are omitted in favor of built-in agent capabilities and Eric's own workflows.
 
 ## What's included
 
-| Category | Skills | Trigger examples |
-|----------|--------|------------------|
-| **Coding** | `plan-mode`, `tdd-workflow`, `verification-before-completion`, `systematic-debugging` | `/plan`, "implement X", "bug" |
-| **Collaboration** | `diagram-tier-selection`, `parallel-tasks`, `brainstorm-spec-plan-implement` | "draw a diagram", "in parallel", "let's build" |
-| **Communication** | `language-mirroring`, `multilingual-coaching` | always-on |
-| **Context** | `personal-context-sync` | personal background, durable personal facts |
-| **Language** | `jlpt-n2-coach` | JLPT N2, mock-test analysis, drills |
-| **Wiki** | `llm-wiki` | `INGEST`, `LINT`, `GRAPH`, `CAPTURE` |
-| **Diagram** | `fireworks-tech-graph` | technical diagrams, SVG+PNG export |
-| **Obsidian LLM Wiki** | `methodology`, `ingest`, `lint`, `graph`, `capture` | `INGEST`, `LINT`, `GRAPH`, `CAPTURE` |
-| **Media** | `quark-resource-search` | "find resource", "organize this folder" |
-| **Vendored (3rd party)** | `karpathy-guidelines` | code-quality guardrails |
-
-See `dist/AGENTS.md` or `dist/GEMINI.md` for the full machine-readable index.
+| Category | Skills | When to use |
+|----------|--------|-------------|
+| **Career** | `resume-coach`, `system-design-interview` | Resume review/rewrites and Google Docs updates; interview-grade system design with diagrams and wiki records |
+| **Coding** | `agy-delegation`, `jev-prefilter` | Delegate large well-scoped execution tasks to `agy`; pre-filter bulk logs/candidates with `jev` |
+| **Communication** | `multilingual-coaching` | Always-on passive one-line corrections (`😇` English, `🌸` Japanese) at the end of replies |
+| **Context** | `personal-context-sync` | Read and maintain Eric's durable personal profile in the LLM Wiki |
+| **Language** | `jlpt-n2-coach` | JLPT N2 mock-test OCR, error bank tracking, knowledge summaries, and targeted drills |
+| **Media** | `quark-resource-search` | Search, filter, save, and organize Quark Cloud movie/TV resources with Alist |
+| **Ops** | `keychain-secrets` | Manage secrets in macOS Keychain paired with the LLM Wiki pointer registry |
+| **Wiki** | `llm-wiki` | `INGEST`, `LINT`, `GRAPH`, `CAPTURE`, and exam error-bank workflows for Eric's Obsidian vault |
 
 ## Install
 
 ```bash
 git clone https://github.com/tcf245/agent-skills.git ~/workspace/agent-skills
 cd ~/workspace/agent-skills
-./scripts/install.sh <cc|codex|gemini|all>
+./scripts/install.sh all
 ```
 
-Per-platform behavior:
+Preview without modifying the filesystem:
 
-### Claude Code
-- Symlinks `skills/` into `~/.claude/skills/agent-skills/` (lazy-load via the `Skill` tool)
-- Splices `dist/CLAUDE.md` into `~/.claude/CLAUDE.md` (eager-load index — works on a new machine before the symlink, and survives multi-device setups via Anthropic account sync)
-- Restart Claude Code to pick up the new skills
-- For vendored content, prefer installing the original upstream plugin or skill package when one is available; it will usually be fresher than this repo's snapshot.
+```bash
+./scripts/install.sh --dry-run all
+```
 
-### Codex CLI
-- Splices `dist/AGENTS.md` into `~/.codex/AGENTS.md` (or `$CODEX_AGENTS_FILE`)
-- Publishes `skills/` and `vendored/` as symlinks under `~/.config/agent-skills/` (or `$AGENT_SKILLS_HOME`)
-- The agent reads skill files on demand using its Read tool
+What `scripts/install.sh` does:
 
-### Gemini CLI
-- Splices `dist/GEMINI.md` into `~/.gemini/GEMINI.md` (or `$GEMINI_AGENTS_FILE`)
-- Same publish behavior as Codex
-
-Install is **idempotent** — re-running replaces the agent-skills block (delimited by `# === agent-skills BEGIN / END ===`) without touching the rest of your config.
+1. **Canonical skill symlinks (`~/.agents/skills/<name>`):** For every skill directory under `skills/` containing `SKILL.md`, creates `~/.agents/skills/<name> -> ~/workspace/agent-skills/skills/<category>/<name>`. Any existing real directory of the same name is moved to `~/.agents/skills/.replaced-YYYYmmdd/<name>` first.
+2. **Per-agent skill symlinks:** Creates `~/.claude/skills/<name> -> ~/.agents/skills/<name>` and `~/.gemini/skills/<name> -> ~/.agents/skills/<name>`.
+3. **Legacy cleanup:** Removes the old `~/.claude/skills/agent-skills` symlink and `~/.config/agent-skills` directory if present.
+4. **Minimal config block:** Splices `dist/CLAUDE.md`, `dist/AGENTS.md`, and `dist/GEMINI.md` into `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and `~/.gemini/GEMINI.md` between `# === agent-skills BEGIN ===` and `# === agent-skills END ===` markers, replacing any previous block idempotently.
 
 ## Layout
 
 ```
-skills/             ← Self-authored skills (source of truth)
-  _schema.md        ← Skill file format documentation
-  coding/           ← TDD, plan-mode, debugging, verification
-  collaboration/    ← Diagram tiers, parallel tasks, pipeline
-  communication/    ← Language mirroring, error coaching
-  context/          ← Personal-context synchronization workflows
-  language/         ← Language-learning coaching workflows
-  wiki/             ← Personal wiki management workflows
-  diagram/          ← Diagram generation workflows and render helpers
-  obsidian-llm-wiki/ ← Karpathy-style knowledge base ops
-  media/quark-resource-search/ ← Movie/TV resource search + Alist organize
-vendored/           ← Verbatim snapshots of third-party skills (MIT) with attribution
-dist/               ← Generated AGENTS.md / GEMINI.md (committed; CI verifies in-sync)
-scripts/            ← build / install / lint
-.claude-plugin/     ← Plugin manifest for Claude Code marketplace
+skills/             ← Native skill directories (skills/<category>/<name>/SKILL.md)
+  _schema.md        ← Skill directory & frontmatter format documentation
+  career/           ← resume-coach, system-design-interview
+  coding/           ← agy-delegation, jev-prefilter
+  communication/    ← multilingual-coaching
+  context/          ← personal-context-sync
+  language/         ← jlpt-n2-coach
+  media/            ← quark-resource-search
+  ops/              ← keychain-secrets
+  wiki/             ← llm-wiki
+tools/              ← CLI tools (agy-delegate, jev, keychain-secret)
+dist/               ← Generated minimal CLAUDE.md / AGENTS.md / GEMINI.md blocks
+scripts/            ← build.py / build.sh / install.sh / lint.sh
+.claude-plugin/     ← Plugin manifest
 ```
 
-## Fork & customize
-
-Skills are short — most are under 200 lines. To make this repo yours:
-
-1. **Fork** on GitHub.
-2. **Edit `skills/*.md`** — change wording, add your own rules, remove what doesn't fit. Each skill is independently editable; don't be afraid to make it personal.
-3. **Add platform-specific values** under `config.example.yml`-style files for each skill that needs configuration. Copy `*.example.*` to `*.local.*` (gitignored) and fill in your own paths/credentials.
-4. **Re-run `./scripts/build.sh`** so `dist/` matches your edits, then commit.
-5. **Run `./scripts/lint.sh`** before pushing — it catches accidental personal data leaks.
-
-If you write a new skill, follow the schema documented in `skills/_schema.md`. The build script picks it up automatically.
-
-## CI
+## CI & Verification
 
 CI runs on every push/PR to `main`:
 
-1. `./scripts/lint.sh` — sensitive-data scan + frontmatter completeness
-2. `./scripts/build.sh` — regenerates `dist/`
-3. `git diff --exit-code dist/` — ensures the committed `dist/` is in sync with `skills/`
-
-If you edit a skill and forget to rebuild, CI catches it.
-
-## Sensitive data — what's NOT in this repo
-
-By design:
-
-- No personal emails, credentials, API keys, or tokens
-- No real paths beyond `${VAULT_PATH}`-style placeholders
-- No personal data (watch lists, wiki content, interview notes)
-
-The lint script enforces these via blacklist patterns. See `scripts/lint.sh`.
-
-If you fork and your edits introduce personal data, keep it in:
-- `*.local.json` / `*.local.yml` (gitignored)
-- A separate private repo
+1. `./scripts/lint.sh` — sensitive-data scan + native directory and frontmatter validation
+2. `python3 ./scripts/build.py --check` — verifies committed `dist/` matches `skills/`
+3. `HOME=/tmp/agy-home ./scripts/install.sh --dry-run all` — verifies the installer in dry-run mode
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-Vendored third-party skills retain their own licenses (also MIT) — see [`vendored/README.md`](vendored/README.md) for attribution.

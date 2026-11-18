@@ -37,7 +37,7 @@ Decide by searching `index.md` for the topic before doing anything else.
 
 ### 1. Load context
 
-1. Resolve the wiki path from `config.example.yml` (`${LLM_WIKI_PATH}`) or the local override, and follow the `llm-wiki` skill for schema, index, and log rules.
+1. Resolve the wiki path from `config.example.yml` (`/Users/eric/Library/Mobile Documents/iCloud~md~obsidian/Documents/LLM-Wiki`) or the local override, and follow the `llm-wiki` skill for schema, index, and log rules.
 2. Read `index.md`. Find earlier pages on the same or a neighboring problem: prior interview records, earlier attempts, related concept pages.
 3. Read those pages. An earlier attempt by Eric is important input: the new design must say what changed and why.
 4. Read `wiki/concepts/System Design Interview Framework.md` if present, for his narration conventions.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lint agent-skills repo for sensitive data leaks and frontmatter problems.
+# Lint agent-skills repo for sensitive data leaks and native skill frontmatter rules.
 # Exit 0 on success, non-zero on any finding. CI gate.
 set -uo pipefail
 
@@ -33,28 +33,6 @@ scan_for() {
   fi
 }
 
-scan_for_excluding_example() {
-  local desc="$1"; shift
-  local pattern="$1"; shift
-  local hits
-  hits=$(
-    grep -rEn --binary-files=without-match \
-      --include='*.md' --include='*.py' --include='*.sh' --include='*.json' --include='*.yml' --include='*.yaml' \
-      "$pattern" . 2>/dev/null \
-      | grep -v '^./.git/' \
-      | grep -v '^./scripts/lint.sh:' \
-      | grep -vE '/(config\.example|.*\.example\.).*:' \
-      | grep -vE ':[[:space:]]*\* @example' \
-      || true
-  )
-  if [ -n "$hits" ]; then
-    report "found $desc:"
-    while IFS= read -r line; do
-      printf '    %s\n' "$line" >&2
-    done <<< "$hits"
-  fi
-}
-
 echo "[lint] starting…"
 
 # --- 1. Personal emails ----------------------------------------------------
@@ -63,10 +41,7 @@ echo "[lint] starting…"
 # whc2458@gmail.com is a non-public alternative address — must never appear.
 scan_for "non-public personal emails" 'whc2458@gmail\.com'
 
-# --- 2. Hardcoded user paths (except inside *.example.* files) -------------
-scan_for_excluding_example "hardcoded /Users/eric/ paths" '/Users/eric/'
-
-# --- 3. Credential patterns (excluding placeholders / example files) -------
+# --- 2. Credential patterns (excluding placeholders / example files) -------
 hits=$(
   grep -rEn --binary-files=without-match \
     --include='*.md' --include='*.py' --include='*.sh' --include='*.json' --include='*.yml' --include='*.yaml' \
@@ -87,10 +62,10 @@ if [ -n "$hits" ]; then
   done <<< "$hits"
 fi
 
-# --- 4. Specific known leaked secrets (defense in depth) -------------------
+# --- 3. Specific known leaked secrets (defense in depth) -------------------
 scan_for "TVDB API key (ed65e055…)" 'ed65e055-997a-476a-b663-5e670b941ead'
 
-# --- 5. Non-local IPv4 addresses --------------------------------------------
+# --- 4. Non-local IPv4 addresses --------------------------------------------
 hits=$(
   grep -rEn --binary-files=without-match \
     --include='*.md' --include='*.py' --include='*.sh' --include='*.json' --include='*.yml' --include='*.yaml' \
@@ -107,10 +82,19 @@ if [ -n "$hits" ]; then
   done <<< "$hits"
 fi
 
-# --- 6. Frontmatter sanity (skills/ only — vendored uses upstream's) -------
+# --- 5. Native skill directory format (no loose skill .md files) -----------
+loose=$(find skills -mindepth 2 -maxdepth 2 -type f -name '*.md' || true)
+if [ -n "$loose" ]; then
+  report "non-directory skill files under skills/<category>/ (must be skills/<category>/<name>/SKILL.md):"
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    printf '    %s\n' "$line" >&2
+  done <<< "$loose"
+fi
+
+# --- 6. Frontmatter sanity and directory-name match ------------------------
 missing=""
-for f in $(find skills -name '*.md' ! -name '_schema.md' ! -name 'README.md' ! -path '*/references/*'); do
-  # Find the first --- and the second --- in the file
+while IFS= read -r f; do
   fm=$(awk '/^---$/{c++; if(c==1) start=1; else if(c==2){print; exit}} c==1 && !/^---$/{print}' "$f")
   for key in name description; do
     if ! grep -qE "^${key}:" <<< "$fm"; then
@@ -118,7 +102,14 @@ for f in $(find skills -name '*.md' ! -name '_schema.md' ! -name 'README.md' ! -
 "
     fi
   done
-done
+  dir_name="$(basename "$(dirname "$f")")"
+  fm_name="$(awk -F': *' '/^name:/{gsub(/["'\'']/, "", $2); print $2; exit}' <<< "$fm")"
+  if [ -n "$fm_name" ] && [ "$fm_name" != "$dir_name" ]; then
+    missing="${missing}${f}: frontmatter name '${fm_name}' does not match directory '${dir_name}'
+"
+  fi
+done < <(find skills -name 'SKILL.md' | sort)
+
 if [ -n "$missing" ]; then
   report "frontmatter completeness:"
   while IFS= read -r line; do

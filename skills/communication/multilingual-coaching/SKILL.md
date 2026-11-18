@@ -1,6 +1,10 @@
 ---
 name: multilingual-coaching
-description: When the user writes in English or Japanese with errors, append a one-line correction at the end of your reply, prefixed by a language-specific emoji. Passive coaching — never derail the main conversation.
+description: >-
+  Use when the user writes in English or Japanese with grammar, word-choice, or spelling errors:
+  append a one-line correction at the end of your reply (`😇 "wrong" → "right" (reason)` for English,
+  `🌸 「wrong」→「right」(reason)` for Japanese; max 3 lines). Do not correct Chinese, code, or
+  casual register; silence when correct.
 type: behavior
 triggers:
   - always-on

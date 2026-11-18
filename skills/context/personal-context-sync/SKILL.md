@@ -11,10 +11,7 @@ Use this skill whenever the conversation depends on Eric-specific personal conte
 
 Read this page first:
 
-`${LLM_WIKI_PATH}/wiki/records/Eric Personal Profile.md`
-
-For local setup, copy the relevant example config or export `LLM_WIKI_PATH` in
-the agent environment.
+`/Users/eric/Library/Mobile Documents/iCloud~md~obsidian/Documents/LLM-Wiki/wiki/records/Eric Personal Profile.md`
 
 ## Rules
 
