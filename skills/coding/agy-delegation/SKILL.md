@@ -57,7 +57,7 @@ Don't sync other skills or MCP servers to agy. Put only the rules this task need
    | `rules` | The few rules from the relevant skills and the repo's CLAUDE.md/AGENTS.md for this task |
    | `verify` | A command that proves it worked. agy runs it; **you run it again** |
    | `wiki` | `read` or `write` to give agy the LLM Wiki and the llm-wiki skill. For a handover, write it into the wiki or the run folder first and say where in `goal` |
-   | `model` | Default `gemini-4-argon-high`. Big multi-part tasks: `gemini-pro-orchestrator-g1-pro` (it plans and runs sub-agents; about twice the tokens on small jobs). `gemini-3.8-flash-*` only for bulk text where speed matters. Argon running out of quota falls back to 3.8 Flash by itself (`fallback_from` in the result). Claude models inside agy are not allowed |
+   | `model` | Default `gemini-4-hydrogen-high` (Eric 2026-11-18: his plan has little Argon). Big multi-part tasks: `gemini-pro-orchestrator-g1-pro` (Argon quota; it plans and runs sub-agents; about twice the tokens on small jobs). `gemini-3.8-flash-*` only for bulk text where speed matters. **Quota protection:** each family (Hydrogen / Argon incl. Orchestrator / Flash) has its own weekly quota. When Eric tells you how much is left, record it: `agy-delegate agy-quota <family> <left%>` (`agy-delegate agy-quota` shows it; readings expire after 7 days). Below 50% left, the tool swaps that model for one with more left (`model_swapped_from` in the result). On a quota error it continues down Hydrogen → Argon → Flash in the same folder (`fallback_from`) and records that family as empty. Claude models inside agy are not allowed |
    | `timeout_min` | Default 30, max 60 |
    | `requester` | `eric` or `baobao` |
 

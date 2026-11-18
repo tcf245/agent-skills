@@ -31,7 +31,7 @@ def env(tmp_path):
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("---\nname: llm-wiki\n---\n")
     return agy.Paths(workspace=workspace, runs=workspace / ".agy-runs", wiki=wiki, wiki_skill=skill / "SKILL.md",
-                     quota=tmp_path / "quota.json")
+                     quota=tmp_path / "quota.json", agy_quota=tmp_path / "agy-quota.json")
 
 
 def _stream(result: dict) -> str:
@@ -90,11 +90,11 @@ def test_a_repo_task_runs_in_its_own_worktree_and_leaves_the_original_untouched(
     assert result["status"] == "done" and result["summary"] == "改好了"
 
 
-def test_the_command_is_sandboxed_streamed_structured_and_on_argon_by_default(env):
+def test_the_command_is_sandboxed_streamed_structured_and_on_hydrogen_by_default(env):
     fake = FakeAgy()
     go({"goal": "x", "repo": repo(env)}, env, fake)
     command = fake.calls[0]["command"]
-    assert command[0] == "agy" and "--sandbox" in command and model_of(fake.calls[0]) == "gemini-4-argon-high"
+    assert command[0] == "agy" and "--sandbox" in command and model_of(fake.calls[0]) == "gemini-4-hydrogen-high"
     assert command[command.index("--output-format") + 1] == "stream-json"
     assert json.loads(command[command.index("--json-schema") + 1])["required"] == ["status", "summary"]
     assert "--dangerously-skip-permissions" not in command
@@ -171,12 +171,12 @@ class ArgonOutOfQuota(FakeAgy):
 
 
 @pytest.mark.parametrize("first", ["gemini-4-argon-high", agy.ORCHESTRATOR])
-def test_when_argon_is_out_of_quota_the_task_falls_back_to_flash_in_the_same_folder(env, first):
+def test_when_argon_is_out_of_quota_the_task_falls_back_to_hydrogen_in_the_same_folder(env, first):
     fake = ArgonOutOfQuota()
     result = go({"goal": "x", "repo": repo(env), "model": first}, env, fake)
-    assert [model_of(c) for c in fake.calls] == [first, "gemini-3.8-flash-high"]
+    assert [model_of(c) for c in fake.calls] == [first, "gemini-4-hydrogen-high"]
     assert fake.calls[0]["cwd"] == fake.calls[1]["cwd"]
-    assert result["status"] == "done" and result["model"] == "gemini-3.8-flash-high" and result["fallback_from"] == first
+    assert result["status"] == "done" and result["model"] == "gemini-4-hydrogen-high" and result["fallback_from"] == first
 
 
 def test_other_failures_do_not_fall_back(env):
@@ -188,7 +188,7 @@ def test_other_failures_do_not_fall_back(env):
 def test_every_run_is_written_to_the_ledger(env):
     go({"goal": "x", "repo": repo(env)}, env)
     line = json.loads((env.runs / "ledger.jsonl").read_text().splitlines()[-1])
-    assert line["model"] == "gemini-4-argon-high" and line["status"] == "done" and line["tokens"] == 1234
+    assert line["model"] == "gemini-4-hydrogen-high" and line["status"] == "done" and line["tokens"] == 1234
 
 
 def test_cleanup_removes_the_worktree_branch_and_log(env):
@@ -248,3 +248,71 @@ def test_quota_resets_with_the_window(env):
     env.quota.write_text(json.dumps({"five_hour": 0.97, "five_hour_resets": 2000, "seen_at": 0}))
     assert agy.read_quota(env, now=1000)["mode"] == "stop"
     assert agy.read_quota(env, now=2001)["mode"] == "normal"
+
+
+# ---- agy quota: protect a model once less than half of its quota is left (Eric 2026-11-18) ----------------------------
+
+class OutOfQuota(FakeAgy):
+    """Every model of the given families answers with a quota error."""
+
+    def __init__(self, *families):
+        super().__init__()
+        self.families = families
+
+    def __call__(self, command, cwd, timeout, log):
+        if agy.family(model_of({"command": command})) in self.families:
+            self.calls.append({"command": command, "cwd": Path(cwd), "timeout": timeout})
+            return 1, _stream({"status": "ERROR", "error": "RESOURCE_EXHAUSTED: weekly quota exceeded"}), ""
+        return super().__call__(command, cwd, timeout, log)
+
+
+def test_a_model_with_less_than_half_its_quota_left_is_swapped_for_one_with_more(env):
+    """Eric 2026-11-18: Argon's weekly quota was down to 19%; below 50% a model is protected, not used up."""
+    agy.record_agy_quota("argon", 19, env)
+    fake = FakeAgy()
+    result = go({"goal": "x", "repo": repo(env), "model": "gemini-4-argon-high"}, env, fake)
+    assert model_of(fake.calls[0]) == "gemini-4-hydrogen-high"
+    assert result["model_swapped_from"] == "gemini-4-argon-high"
+
+
+def test_the_orchestrator_counts_as_argon(env):
+    agy.record_agy_quota("argon", 19, env)
+    fake = FakeAgy()
+    go({"goal": "x", "repo": repo(env), "model": agy.ORCHESTRATOR}, env, fake)
+    assert model_of(fake.calls[0]) == "gemini-4-hydrogen-high"
+
+
+def test_a_model_with_half_or_more_left_is_used_as_asked(env):
+    agy.record_agy_quota("argon", 50, env)
+    fake = FakeAgy()
+    result = go({"goal": "x", "repo": repo(env), "model": "gemini-4-argon-high"}, env, fake)
+    assert model_of(fake.calls[0]) == "gemini-4-argon-high" and "model_swapped_from" not in result
+
+
+def test_when_every_model_is_low_the_one_with_most_left_is_used(env):
+    for name, left in (("hydrogen", 30), ("argon", 19), ("flash", 40)):
+        agy.record_agy_quota(name, left, env)
+    fake = FakeAgy()
+    go({"goal": "x", "repo": repo(env)}, env, fake)
+    assert model_of(fake.calls[0]) == "gemini-3.8-flash-high"
+
+
+def test_a_reading_older_than_a_week_no_longer_counts(env):
+    """Google's quotas are weekly: a week-old 19% says nothing about today."""
+    agy.record_agy_quota("hydrogen", 10, env, now=0)
+    assert agy.agy_quota_left(env, now=8 * 86400) == {}
+
+
+def test_running_out_of_quota_falls_back_down_the_chain_and_remembers_it(env):
+    agy.record_agy_quota("argon", 19, env)
+    fake = OutOfQuota("hydrogen")
+    result = go({"goal": "x", "repo": repo(env)}, env, fake)
+    assert [model_of(c) for c in fake.calls] == ["gemini-4-hydrogen-high", "gemini-3.8-flash-high"]  # argon is protected
+    assert result["fallback_from"] == "gemini-4-hydrogen-high"
+    assert agy.agy_quota_left(env)["hydrogen"] == 0
+
+
+def test_agy_quota_can_be_recorded_from_the_command_line(env, monkeypatch, capsys):
+    monkeypatch.setattr(agy, "Paths", lambda: env)
+    assert agy.main(["agy-quota", "argon", "19"]) == 0
+    assert json.loads(capsys.readouterr().out)["argon"]["left"] == 0.19
