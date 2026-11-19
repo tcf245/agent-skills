@@ -4,7 +4,8 @@ The limits live in this code, not in the model (skill: skills/coding/agy-delegat
 - A repo task runs in a fresh git worktree on branch `agy/<run-id>`; the original working tree is never touched.
   A task without a repo runs in its own folder with copies of its input files.
 - agy always runs with `--sandbox`, a JSON schema for its answer, a time limit and an allowed model.
-  agy has two quota buckets: "gemini" (Hydrogen + 3.8 Flash) and "argon" (Argon + the Orchestrator), each with a weekly
+  agy has two quota buckets: "gemini" (Neon + Orchestrator Neon + Hydrogen + 3.8 Flash) and "argon" (Argon +
+  Orchestrator Argon), each with a weekly
   and a 5-hour limit. Below 50% left (recorded with `agy-quota`) a bucket is protected: the task moves to the other one.
   On a quota error the task continues on the other bucket in the same folder; the empty one is skipped for 5 hours.
 - Changed files are read from git / the folder, not from the model. This script runs outside the caller's sandbox,
@@ -37,13 +38,14 @@ from zoneinfo import ZoneInfo
 JST = ZoneInfo("Asia/Tokyo")
 HOME = Path.home()
 SCRIPT = Path(__file__).resolve()
-MODELS = {f"gemini-4-{m}-{e}" for m in ("argon", "hydrogen") for e in ("low", "medium", "high")} | {
-    "gemini-4-hydrogen-xhigh", "gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"}
-ORCHESTRATOR = "gemini-pro-orchestrator-g1-pro"  # agy's Orchestrator (Argon): plans and runs sub-agents; big multi-part tasks only
-MODELS.add(ORCHESTRATOR)
+MODELS = {f"gemini-4-{m}-{e}" for m in ("argon", "hydrogen", "neon") for e in ("low", "medium", "high")} | {
+    "gemini-4-hydrogen-xhigh", "gemini-4-neon-xhigh", "gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"}
+ORCHESTRATOR = "gemini-pro-orchestrator-g1-pro"  # Orchestrator (Argon): Argon plans, sub-agents run; Argon's quota
+ORCHESTRATOR_NEON = "gemini-pro-orchestrator-neon"  # Orchestrator (Neon): Neon plans, Hydrogen executes; shared gemini quota
+MODELS |= {ORCHESTRATOR, ORCHESTRATOR_NEON}
 ARGON = {f"gemini-4-argon-{e}" for e in ("low", "medium", "high")} | {ORCHESTRATOR}  # Argon's own quota
-DEFAULT_MODEL = "gemini-4-hydrogen-high"  # Eric 2026-11-18: Hydrogen first (his plan has little Argon); Flash for bulk text
-CHAIN = ("gemini-4-hydrogen-high", "gemini-4-argon-high")  # one model per quota bucket, in order of preference
+DEFAULT_MODEL = ORCHESTRATOR_NEON  # Eric 2026-11-19: Neon replaced Argon and joined the shared 5-hour + weekly pool
+CHAIN = (ORCHESTRATOR_NEON, "gemini-4-argon-high")  # one model per quota bucket, in order of preference
 PROTECT = 0.5  # Eric 2026-11-18: below half of a weekly quota left, protect that bucket instead of using it up
 WEEK, FIVE_HOURS = 7 * 86400, 5 * 3600
 QUOTA_ERROR = re.compile(r"quota|exhaust|rate.?limit|limit (reached|exceeded)|\b429\b", re.IGNORECASE)

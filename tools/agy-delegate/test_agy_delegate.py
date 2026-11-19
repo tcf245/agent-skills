@@ -90,11 +90,11 @@ def test_a_repo_task_runs_in_its_own_worktree_and_leaves_the_original_untouched(
     assert result["status"] == "done" and result["summary"] == "改好了"
 
 
-def test_the_command_is_sandboxed_streamed_structured_and_on_hydrogen_by_default(env):
+def test_the_command_is_sandboxed_streamed_structured_and_on_orchestrator_neon_by_default(env):
     fake = FakeAgy()
     go({"goal": "x", "repo": repo(env)}, env, fake)
     command = fake.calls[0]["command"]
-    assert command[0] == "agy" and "--sandbox" in command and model_of(fake.calls[0]) == "gemini-4-hydrogen-high"
+    assert command[0] == "agy" and "--sandbox" in command and model_of(fake.calls[0]) == "gemini-pro-orchestrator-neon"
     assert command[command.index("--output-format") + 1] == "stream-json"
     assert json.loads(command[command.index("--json-schema") + 1])["required"] == ["status", "summary"]
     assert "--dangerously-skip-permissions" not in command
@@ -171,12 +171,12 @@ class ArgonOutOfQuota(FakeAgy):
 
 
 @pytest.mark.parametrize("first", ["gemini-4-argon-high", agy.ORCHESTRATOR])
-def test_when_argon_is_out_of_quota_the_task_falls_back_to_hydrogen_in_the_same_folder(env, first):
+def test_when_argon_is_out_of_quota_the_task_falls_back_to_orchestrator_neon_in_the_same_folder(env, first):
     fake = ArgonOutOfQuota()
     result = go({"goal": "x", "repo": repo(env), "model": first}, env, fake)
-    assert [model_of(c) for c in fake.calls] == [first, "gemini-4-hydrogen-high"]
+    assert [model_of(c) for c in fake.calls] == [first, "gemini-pro-orchestrator-neon"]
     assert fake.calls[0]["cwd"] == fake.calls[1]["cwd"]
-    assert result["status"] == "done" and result["model"] == "gemini-4-hydrogen-high" and result["fallback_from"] == first
+    assert result["status"] == "done" and result["model"] == "gemini-pro-orchestrator-neon" and result["fallback_from"] == first
 
 
 def test_other_failures_do_not_fall_back(env):
@@ -188,7 +188,7 @@ def test_other_failures_do_not_fall_back(env):
 def test_every_run_is_written_to_the_ledger(env):
     go({"goal": "x", "repo": repo(env)}, env)
     line = json.loads((env.runs / "ledger.jsonl").read_text().splitlines()[-1])
-    assert line["model"] == "gemini-4-hydrogen-high" and line["status"] == "done" and line["tokens"] == 1234
+    assert line["model"] == "gemini-pro-orchestrator-neon" and line["status"] == "done" and line["tokens"] == 1234
 
 
 def test_cleanup_removes_the_worktree_branch_and_log(env):
@@ -251,7 +251,7 @@ def test_quota_resets_with_the_window(env):
 
 
 # ---- agy quota: protect a model once less than half of its quota is left (Eric 2026-11-18) ----------------------------
-# agy's quota page (2026-11-18): "GEMINI MODELS" = Hydrogen + 3.8 Flash share one bucket; Argon (+ Orchestrator) has its own.
+# agy quota page: Neon (+ Orchestrator Neon, since 2026-11-19), Hydrogen and 3.8 Flash share the "gemini" bucket; Argon (+ Orchestrator Argon) has its own.
 
 class OutOfQuota(FakeAgy):
     """Every model of the given buckets answers with a quota error."""
@@ -267,8 +267,8 @@ class OutOfQuota(FakeAgy):
         return super().__call__(command, cwd, timeout, log)
 
 
-def test_hydrogen_and_flash_share_the_gemini_bucket():
-    assert {agy.bucket(m) for m in ("gemini-4-hydrogen-high", "gemini-3.8-flash-low")} == {"gemini"}
+def test_neon_hydrogen_and_flash_share_the_gemini_bucket():
+    assert {agy.bucket(m) for m in ("gemini-pro-orchestrator-neon", "gemini-4-neon-high", "gemini-4-hydrogen-high", "gemini-3.8-flash-low")} == {"gemini"}
     assert {agy.bucket(m) for m in ("gemini-4-argon-low", agy.ORCHESTRATOR)} == {"argon"}
 
 
@@ -277,7 +277,7 @@ def test_a_model_with_less_than_half_its_quota_left_is_swapped_for_one_with_more
     agy.record_agy_quota("argon", 18.74, env)
     fake = FakeAgy()
     result = go({"goal": "x", "repo": repo(env), "model": agy.ORCHESTRATOR}, env, fake)
-    assert model_of(fake.calls[0]) == "gemini-4-hydrogen-high"
+    assert model_of(fake.calls[0]) == "gemini-pro-orchestrator-neon"
     assert result["model_swapped_from"] == agy.ORCHESTRATOR
 
 
@@ -318,9 +318,9 @@ def test_running_out_mid_task_moves_to_the_other_bucket_and_marks_it_empty_for_f
     """A quota error may be the 5-hour limit, so the bucket is only marked empty for 5 hours."""
     fake = OutOfQuota("gemini")
     result = go({"goal": "x", "repo": repo(env)}, env, fake)
-    assert [model_of(c) for c in fake.calls] == ["gemini-4-hydrogen-high", "gemini-4-argon-high"]
+    assert [model_of(c) for c in fake.calls] == ["gemini-pro-orchestrator-neon", "gemini-4-argon-high"]
     assert fake.calls[0]["cwd"] == fake.calls[1]["cwd"]
-    assert result["status"] == "done" and result["fallback_from"] == "gemini-4-hydrogen-high"
+    assert result["status"] == "done" and result["fallback_from"] == "gemini-pro-orchestrator-neon"
     import time
     assert agy.agy_quota_left(env)["gemini"] == 0
     assert agy.agy_quota_left(env, now=time.time() + 6 * 3600) == {}

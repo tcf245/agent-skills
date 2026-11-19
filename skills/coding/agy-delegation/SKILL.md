@@ -57,7 +57,7 @@ Don't sync other skills or MCP servers to agy. Put only the rules this task need
    | `rules` | The few rules from the relevant skills and the repo's CLAUDE.md/AGENTS.md for this task |
    | `verify` | A command that proves it worked. agy runs it; **you run it again** |
    | `wiki` | `read` or `write` to give agy the LLM Wiki and the llm-wiki skill. For a handover, write it into the wiki or the run folder first and say where in `goal` |
-   | `model` | Default `gemini-4-hydrogen-high` (Eric 2026-11-18: his plan has little Argon). Big multi-part tasks: `gemini-pro-orchestrator-g1-pro` (Argon quota; it plans and runs sub-agents; about twice the tokens on small jobs). `gemini-3.8-flash-*` only for bulk text where speed matters. **Quota protection:** agy has two buckets, as its quota page shows: `gemini` (Hydrogen + 3.8 Flash share it) and `argon` (Argon + Orchestrator), each with a weekly and a 5-hour limit. agy's CLI cannot report them, so when Eric pastes the page, record each bucket: `agy-delegate agy-quota <gemini|argon> <left%> <refresh-hours>` (no arguments shows it; a reading expires at the refresh time, default 7 days). Below 50% left, the tool swaps the model for the other bucket (`model_swapped_from`). On a quota error mid-task it continues on the other bucket in the same folder (`fallback_from`) and skips the empty one for 5 hours. Claude models inside agy are not allowed |
+   | `model` | Default `gemini-pro-orchestrator-neon` = Orchestrator (Neon) (Eric 2026-11-19: Neon replaced Argon; Neon plans and reviews, Hydrogen executes). Small, fully specified edits: `gemini-4-hydrogen-high`. Hardest single-thread work: `gemini-4-neon-high`/`-xhigh`. `gemini-3.8-flash-*` only for bulk text where speed matters. Argon (`gemini-4-argon-*`, `gemini-pro-orchestrator-g1-pro`) is only the fallback bucket. **Quota protection:** agy has two buckets, as its quota page shows: `gemini` (Neon, Orchestrator Neon, Hydrogen and 3.8 Flash share it) and `argon` (Argon + Orchestrator Argon), each with a weekly and a 5-hour limit. agy's CLI cannot report them, so when Eric pastes the page, record each bucket: `agy-delegate agy-quota <gemini|argon> <left%> <refresh-hours>` (no arguments shows it; a reading expires at the refresh time, default 7 days). Below 50% left, the tool swaps the model for the other bucket (`model_swapped_from`). On a quota error mid-task it continues on the other bucket in the same folder (`fallback_from`) and skips the empty one for 5 hours. Claude models inside agy are not allowed |
    | `timeout_min` | Default 30, max 60 |
    | `requester` | `eric` or `baobao` |
 
@@ -84,5 +84,5 @@ Don't sync other skills or MCP servers to agy. Put only the rules this task need
 
 - Delegating a vague goal and then redoing the work yourself: costs both quotas.
 - Reading every line agy changed instead of running the check: verification is the verify command plus a look at the diff.
-- Using the Orchestrator or Argon for a two-minute edit.
+- Using an Orchestrator or Neon/Argon for a two-minute edit (use Hydrogen).
 - Passing whole skills, MCP access, or secrets to agy.
