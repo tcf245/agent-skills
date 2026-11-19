@@ -71,9 +71,20 @@ Don't sync other skills or MCP servers to agy. Put only the rules this task need
 
 3. **Verify.** Read `status`, `summary`, `questions`, `files_changed` (from git, not from agy), `wiki_changed`, `warning`. In `workdir`, run `verify` and look at `git diff` yourself. agy saying the tests pass does not count.
 
-4. **Land it.** Good: merge or cherry-pick branch `agy/<run-id>` (or copy the outputs). Not good: re-delegate with a sharper `goal`, or fix it yourself. Then `agy-delegate cleanup <run-id>`.
+4. **Land it.** agy never commits, so its work sits uncommitted in `workdir`. Good: `git add -A && git commit` there, then cherry-pick or merge it onto your branch and check `git log` (or copy the outputs). Not good: re-delegate with a sharper `goal`, or fix it yourself. Only then, as a separate command, `agy-delegate cleanup <run-id>` — cleanup force-removes the worktree, uncommitted work included, so never chain it after `;`.
 
 5. **Report** which part agy did and how you checked it.
+
+## Keep runs short
+
+A run costs time per step, not per token: every file read, edit and command is one more model turn (logs, 2026-11-18/19: one wiki task spent 1,129 s thinking and 917 s in 29 small edits; a test fix thought 218 s against 130 s of commands). The tool's ground rules already tell agy to batch reads, merge edits, run the full check once and stop on environment trouble. Your package decides the rest:
+
+- **Pick the model by how settled the plan is.** You wrote the plan and named the files: Hydrogen. agy must plan across several files or parts: Orchestrator (Neon). Four Orchestrator runs on spec-complete UI work took 9–15 min each.
+- **Hand over what you already know.** Name the files (and line ranges) to read, the hypothesis you formed, and a real data sample when the code parses data — agy wrote a furigana parser from the spec's example and missed the real `<b>`/Anki-space format.
+- **Pre-solve the environment in `rules`.** A worktree has no `node_modules`, Docker and secrets: say how to link `node_modules`, which Node to use, and which tests it cannot run (testcontainers need Docker — run those yourself). One unanswered setup question cost several probing commands per run.
+- **Keep `verify` fast and targeted.** The tests for the change plus lint/typecheck; you run the full suite afterwards anyway.
+- **One package per landing unit.** Split work that lands on different branches into separate runs; run independent ones in parallel (each gets its own worktree).
+- **Don't ask for extras.** No coverage reports, stress runs or docs unless the task needs them; each is a full extra pass.
 
 ## Claude Code specifics
 

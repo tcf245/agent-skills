@@ -135,6 +135,14 @@ def test_the_prompt_carries_goal_rules_and_the_ground_rules(env):
         assert rule in prompt
 
 
+def test_the_prompt_carries_the_efficiency_rules(env):
+    fake = FakeAgy()
+    go({"goal": "改一个函数", "repo": repo(env)}, env, fake)
+    prompt = fake.calls[0]["command"][fake.calls[0]["command"].index("-p") + 1]
+    for rule in ("一条命令", "一次写入", "不要重复读", "只跑一次", "ask_permission", "子代理"):
+        assert rule in prompt, rule
+
+
 def test_wiki_tasks_get_the_wiki_and_the_llm_wiki_skill(env):
     fake = FakeAgy()
     go({"goal": "查一下", "wiki": "read"}, env, fake)
