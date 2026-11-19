@@ -223,6 +223,29 @@ def test_a_broken_panel_never_fails_the_task(env):
     assert go({"goal": "x", "repo": repo(env)}, env, opener=broken)["status"] == "done"
 
 
+def test_cleanup_closes_the_runs_panel(env):
+    result = go({"goal": "x", "repo": repo(env)}, env, opener=lambda run_id: "block:pane-1")
+    closed = []
+    agy.cleanup(result["run_id"], paths=env, closer=closed.append)
+    assert closed == ["block:pane-1"]
+    assert not list(env.runs.glob("*.panel"))
+
+
+def test_cleanup_without_a_panel_closes_nothing(env):
+    result = go({"goal": "x", "repo": repo(env), "panel": False}, env)
+    closed = []
+    agy.cleanup(result["run_id"], paths=env, closer=closed.append)
+    assert closed == []
+
+
+def test_a_broken_closer_never_fails_cleanup(env):
+    result = go({"goal": "x", "repo": repo(env)}, env, opener=lambda run_id: "block:pane-1")
+    def broken(block_id):
+        raise RuntimeError("rex is gone")
+    agy.cleanup(result["run_id"], paths=env, closer=broken)
+    assert not Path(result["workdir"]).exists()
+
+
 def test_watch_shows_the_task_the_tools_and_the_answer(env):
     result = go({"goal": "改 a.txt", "repo": repo(env)}, env, FakeAgy(edit=lambda cwd: (cwd / "a.txt").write_text("n")))
     out = io.StringIO()

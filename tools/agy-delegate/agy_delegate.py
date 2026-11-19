@@ -16,7 +16,7 @@ The limits live in this code, not in the model (skill: skills/coding/agy-delegat
 Usage:
   agy-delegate run <task.json> [--no-panel]   run a task; prints a JSON result
   agy-delegate watch <run-id>                 follow a run's progress (what the Rex pane shows)
-  agy-delegate cleanup <run-id>               remove a run's worktree/branch or folder
+  agy-delegate cleanup <run-id>               remove a run's worktree/branch or folder and close its pane
   agy-delegate quota                          Claude's last known quota use and the mode it implies
   agy-delegate agy-quota [<bucket> <left%> [<refresh-hours>]]
                                               show or record how much of a bucket's weekly agy quota is left
@@ -99,7 +99,8 @@ class Paths:
 
 # runner(command, cwd, timeout, log) -> (returncode, stdout, stderr); the real one streams stdout into `log` as it comes.
 Runner = Callable[[list[str], Path, int, Path], tuple[int, str, str]]
-Opener = Callable[[str], None]
+Opener = Callable[[str], "str | None"]  # returns the Rex block id of the pane it opened
+Closer = Callable[[str], None]
 
 
 def _run_agy(command: list[str], cwd: Path, timeout: int, log: Path) -> tuple[int, str, str]:
@@ -119,15 +120,26 @@ def _run_agy(command: list[str], cwd: Path, timeout: int, log: Path) -> tuple[in
     return proc.returncode, "".join(lines), stderr
 
 
-def _open_panel(run_id: str) -> None:
-    """Inside Rex, show the run live in a pane to the right of the caller's pane; silently skip otherwise."""
+def _open_panel(run_id: str) -> str | None:
+    """Inside Rex, show the run live in a pane to the right of the caller's pane; silently skip otherwise.
+    Returns the new pane's block id so cleanup can close it."""
     session, block = os.environ.get("REX_SESSION"), os.environ.get("REX_BLOCK")
     rex = shutil.which("rex")
     if not (session and block and rex):
-        return
-    subprocess.run([rex, "split", "-s", session, "-b", block, "--split=right", "--ratio", "45", "--focus=false",
-                    "--keep-open", "--", sys.executable, str(SCRIPT), "watch", run_id],
-                   capture_output=True, timeout=20, check=False)
+        return None
+    proc = subprocess.run([rex, "split", "-s", session, "-b", block, "--split=right", "--ratio", "45", "--focus=false",
+                           "--keep-open", "--json", "--", sys.executable, str(SCRIPT), "watch", run_id],
+                          capture_output=True, text=True, timeout=20, check=False)
+    try:
+        return json.loads(proc.stdout)["block_ids"][0]
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None
+
+
+def _close_panel(block_id: str) -> None:
+    rex = shutil.which("rex")
+    if rex:
+        subprocess.run([rex, "block", "close", block_id], capture_output=True, timeout=20, check=False)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -266,7 +278,9 @@ def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: O
                               ensure_ascii=False) + "\n")
     if task.get("panel", True):
         try:
-            opener(run_id)
+            pane = opener(run_id)
+            if isinstance(pane, str) and pane:
+                (paths.runs / f"{run_id}.panel").write_text(pane)
         except Exception:  # the panel is a convenience; never fail the task over it
             pass
     before = _snapshot(workdir) if not branch else {}
@@ -317,8 +331,8 @@ def _ledger(paths: Paths, spec: dict, result: dict) -> None:
     _log(paths.runs / "ledger.jsonl", line)
 
 
-def cleanup(run_id: str, paths: Paths = Paths()) -> None:
-    """Remove a finished run: its worktree and branch, or its folder. Merge what you want to keep first."""
+def cleanup(run_id: str, paths: Paths = Paths(), closer: Closer = _close_panel) -> None:
+    """Remove a finished run: its worktree and branch, or its folder, and close its Rex pane. Merge what you want to keep first."""
     if not run_id or "/" in run_id or run_id.startswith("."):
         raise TaskError("run_id 不对")
     workdir = paths.runs / run_id
@@ -329,6 +343,13 @@ def cleanup(run_id: str, paths: Paths = Paths()) -> None:
     elif workdir.is_dir():
         shutil.rmtree(workdir)
     (paths.runs / f"{run_id}.log.jsonl").unlink(missing_ok=True)
+    panel = paths.runs / f"{run_id}.panel"
+    if panel.is_file():
+        try:
+            closer(panel.read_text().strip())
+        except Exception:  # the pane is a convenience; never fail cleanup over it
+            pass
+        panel.unlink()
 
 
 # ---- live view -------------------------------------------------------------------------------------------------------
