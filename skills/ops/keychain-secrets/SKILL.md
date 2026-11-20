@@ -73,6 +73,24 @@ Tool: `keychain-secret` on PATH (`~/.local/bin/keychain-secret` → `agent-skill
 | **Retire** | `keychain-secret retire '<service>' ['<account>'] [--yes]` | Without `--yes`, previews target. With `--yes` (after owner OK), deletes from Keychain; move row from User-Managed table to **Retired** table with `Retired on` = today and `Reason` + append `log.md`. |
 | **Audit** | `keychain-secret audit [--registry PATH]` | Reconcile output (names only): add missing user-managed items (or classify under **App-managed**), remove/retire rows missing from Keychain, and rotate keys expired or expiring within 30 days. |
 
+## Project `.env` Files
+
+Plaintext `.env` files are not allowed, even when gitignored. Each project keeps a value-free **`.env.keychain`** (committed) and renders values at use time:
+
+```text
+DISCORD_BOT_TOKEN=keychain:agent-crew/prod/DISCORD_BOT_TOKEN#eric   # from Keychain
+NGINX_PORT=8080                                                     # plain, non-secret config
+```
+
+| Need | Command |
+|---|---|
+| Migrate an existing `.env` | `keychain-secret import-env .env <project>/<env> eric --keep PORT,... > .env.keychain`, check `diff <(keychain-secret env .env.keychain) <(grep -v -e '^#' -e '^$' .env)` is empty, then delete `.env` |
+| Run a dev server / script | `keychain-secret run .env.keychain -- <command>` |
+| Tool that only reads a file (k8s `--from-env-file`, compose `--env-file`) | `<(keychain-secret env .env.keychain)` (process substitution, never a file on disk) |
+| Change one value | `keychain-secret rotate <project>/<env>/<KEY> eric` (human enters the value) |
+
+Service naming: `<project>/<env>/<KEY>`, account `eric`. Add one registry row per item (the agent may group them by project in the Purpose text) in the same session.
+
 ## Anti-Patterns
 
 - Never run `security find-generic-password -w` as a bare command whose stdout returns to the agent transcript.

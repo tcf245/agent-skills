@@ -318,4 +318,61 @@ assert_not_contains "$audit_out" "far-future-key" "audit does not flag item expi
 assert_not_contains "$audit_out" "rotated-secret-value-2" "audit never prints secret values"
 assert_not_contains "$audit_out" "unreg-tok" "audit never prints secret values"
 
+# 9. import-env: move a plaintext .env into Keychain and emit a value-free mapping
+DOTENV="$TMP/app.env"
+cat > "$DOTENV" <<'EOF'
+# comment line
+API_TOKEN=tok-abc-123
+DB_URL="postgres://u:pw-xyz@h/db"
+PORT=8080
+
+QUOTED_SPACE='a b'
+EOF
+map_out="$("$TOOL" import-env "$DOTENV" "app/local" "eric" --keep PORT 2>"$TMP/import.err")"
+import_err="$(cat "$TMP/import.err")"
+assert_contains "$map_out" "API_TOKEN=keychain:app/local/API_TOKEN#eric" "import-env maps secret var to Keychain ref"
+assert_contains "$map_out" 'DB_URL=keychain:app/local/DB_URL#eric' "import-env maps quoted var"
+assert_contains "$map_out" "PORT=8080" "import-env keeps --keep vars as plain values"
+assert_not_contains "$map_out" "tok-abc-123" "mapping never contains secret values"
+assert_not_contains "$map_out" "pw-xyz" "mapping never contains secret values"
+assert_not_contains "$import_err" "tok-abc-123" "import-env never prints secrets on stderr"
+assert_eq "$("$TOOL" get "app/local/API_TOKEN" "eric")" "tok-abc-123" "import-env stores value"
+assert_eq "$("$TOOL" get "app/local/DB_URL" "eric")" '"postgres://u:pw-xyz@h/db"' "import-env stores right-hand side verbatim"
+
+# 9b. import-env is idempotent when the stored value already matches
+map_again="$("$TOOL" import-env "$DOTENV" "app/local" "eric" --keep PORT 2>/dev/null)"
+assert_eq "$map_again" "$map_out" "import-env re-run with same values gives same mapping"
+
+# 9c. import-env refuses to overwrite a different existing value
+printf 'API_TOKEN=different\n' > "$TMP/changed.env"
+if "$TOOL" import-env "$TMP/changed.env" "app/local" "eric" >/dev/null 2>&1; then
+  echo "FAIL: import-env must refuse to overwrite a different value" >&2
+  exit 1
+fi
+
+# 10. env renders the mapping back to the original dotenv (comments/blank lines dropped)
+MAPFILE="$TMP/app.env.keychain"
+printf '%s\n' "$map_out" > "$MAPFILE"
+env_out="$("$TOOL" env "$MAPFILE")"
+assert_eq "$env_out" "$(grep -v -e '^#' -e '^$' "$DOTENV")" "env reproduces the original dotenv"
+
+# 10b. env fails loudly (no partial output) on a missing Keychain item
+printf 'A=1\nB=keychain:no/such/item#eric\n' > "$TMP/bad.keychain"
+if bad_out="$("$TOOL" env "$TMP/bad.keychain" 2>/dev/null)"; then
+  echo "FAIL: env must fail on a missing item" >&2
+  exit 1
+fi
+assert_eq "${bad_out:-}" "" "env prints nothing when an item is missing"
+
+# 11. run injects unquoted values into the child environment
+run_out="$("$TOOL" run "$MAPFILE" -- /usr/bin/env)"
+assert_contains "$run_out" "API_TOKEN=tok-abc-123" "run exports Keychain value"
+assert_contains "$run_out" "DB_URL=postgres://u:pw-xyz@h/db" "run strips dotenv double quotes"
+assert_contains "$run_out" "QUOTED_SPACE=a b" "run strips dotenv single quotes"
+assert_contains "$run_out" "PORT=8080" "run exports plain values"
+if "$TOOL" run "$MAPFILE" /usr/bin/true 2>/dev/null; then
+  echo "FAIL: run without -- should fail" >&2
+  exit 1
+fi
+
 echo "[test-keychain-secret] ✅ all tests passed"
