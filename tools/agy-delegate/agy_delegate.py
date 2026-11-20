@@ -71,6 +71,7 @@ SCHEMA = {
 GROUND_RULES = """规则（必须遵守）：
 - 只在当前目录里工作。不要 git commit、git push，不要 deploy，不要安装全局软件。
 - 不要读取或打印密钥：.env、令牌、证书、SSH 私钥、登录文件。
+- 命令被 hook 拦下（“被硬规则 … 拦下”）时照报错里的改法做；觉得规则不对就写进 questions，不要换个写法绕过。
 - 做完后自己检查结果；给了验收命令就运行它，在 verification 里写命令和结果。
 - 信息不够或需要决定时不要猜：status 写 needs_input，在 questions 里写问题。
 - summary 简短：做了什么、没做什么、要注意什么。

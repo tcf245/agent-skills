@@ -15,7 +15,7 @@ Eric's personal AI agent skill collection in native Agent Skills format (`skills
 | Category | Skills | When to use |
 |----------|--------|-------------|
 | **Career** | `resume-coach`, `system-design-interview` | Resume review/rewrites and Google Docs updates; interview-grade system design with diagrams and wiki records |
-| **Coding** | `agy-delegation`, `jev-prefilter` | Delegate large well-scoped execution tasks to `agy`; pre-filter bulk logs/candidates with `jev` |
+| **Coding** | `agy-delegation`, `jev-prefilter`, `working-rules` | Delegate large well-scoped execution tasks to `agy`; pre-filter bulk logs/candidates with `jev`; always-on standing rules (fix mistakes with checks before prose, obey hooks, secrets in Keychain, push yourself, evidence before done) |
 | **Communication** | `multilingual-coaching` | Always-on passive one-line corrections (`😇` English, `🌸` Japanese) at the end of replies |
 | **Context** | `personal-context-sync` | Read and maintain Eric's durable personal profile in the LLM Wiki |
 | **Language** | `jlpt-n2-coach` | JLPT N2 mock-test OCR, error bank tracking, knowledge summaries, and targeted drills |
