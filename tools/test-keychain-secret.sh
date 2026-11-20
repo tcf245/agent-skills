@@ -89,7 +89,7 @@ if sub == "find-generic-password":
         if is_hex:
             sys.stderr.write(f'password: 0x{secret.encode("utf-8").hex().upper()}  "<octal>"\n')
         else:
-            sys.stderr.write(f'password: "{secret}"\n')
+            sys.stderr.write(f"password: {json.dumps(secret)}\n")
     else:
         sys.stdout.write(format_item(s, a, info))
     sys.exit(0)
