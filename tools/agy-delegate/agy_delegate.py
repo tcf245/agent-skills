@@ -16,7 +16,8 @@ The limits live in this code, not in the model (skill: skills/coding/agy-delegat
 Usage:
   agy-delegate run <task.json> [--no-panel]   run a task; prints a JSON result
   agy-delegate watch <run-id>                 follow a run's progress (what the Rex pane shows)
-  agy-delegate cleanup <run-id>               remove a run's worktree/branch or folder and close its pane
+  agy-delegate cleanup <run-id> [--discard]   remove a run's worktree/branch or folder and close its pane;
+                                              refuses while the worktree has uncommitted changes unless --discard
   agy-delegate quota                          Claude's last known quota use and the mode it implies
   agy-delegate agy-quota [<bucket> <left%> [<refresh-hours>]]
                                               show or record how much of a bucket's weekly agy quota is left
@@ -331,12 +332,17 @@ def _ledger(paths: Paths, spec: dict, result: dict) -> None:
     _log(paths.runs / "ledger.jsonl", line)
 
 
-def cleanup(run_id: str, paths: Paths = Paths(), closer: Closer = _close_panel) -> None:
-    """Remove a finished run: its worktree and branch, or its folder, and close its Rex pane. Merge what you want to keep first."""
+def cleanup(run_id: str, paths: Paths = Paths(), closer: Closer = _close_panel, discard: bool = False) -> None:
+    """Remove a finished run: its worktree and branch, or its folder, and close its Rex pane. Merge what you want to keep first.
+    A worktree with uncommitted changes is kept unless `discard` (2026-11-19: a chained cleanup deleted 17 unlanded files)."""
     if not run_id or "/" in run_id or run_id.startswith("."):
         raise TaskError("run_id 不对")
     workdir = paths.runs / run_id
     if (workdir / ".git").is_file():  # a worktree: find its repo from the .git pointer
+        changed = _git(workdir, "status", "--porcelain").splitlines()
+        if changed and not discard:
+            raise TaskError(f"{run_id} 还有 {len(changed)} 个未提交的改动，没删。先 git add -A、提交并合到目标分支再清理；"
+                            f"确定不要这些改动，就加 --discard：agy-delegate cleanup {run_id} --discard")
         repo = Path(_git(workdir, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()).parent
         _git(repo, "worktree", "remove", "--force", str(workdir))
         _git(repo, "branch", "-D", f"agy/{run_id}")
@@ -528,7 +534,7 @@ def main(argv: list[str]) -> int:
             watch(argv[1])
             return 0
         if argv[0] == "cleanup":
-            cleanup(argv[1])
+            cleanup(argv[1], discard="--discard" in argv)
             print(json.dumps({"cleaned": argv[1]}))
             return 0
         task = json.loads(Path(argv[1]).read_text())

@@ -87,7 +87,7 @@ What agy can and cannot do (probe 2026-11-20, run `20261120-162931-3d5b`): it ha
 
 3. **Verify.** Read `status`, `summary`, `questions`, `files_changed` (from git, not from agy), `wiki_changed`, `warning`. In `workdir`, run `verify` and look at `git diff` yourself. agy saying the tests pass does not count.
 
-4. **Land it.** agy never commits, so its work sits uncommitted in `workdir`. Good: `git add -A && git commit` there, then cherry-pick or merge it onto your branch and check `git log` (or copy the outputs). Not good: re-delegate with a sharper `goal`, or fix it yourself. Only then, as a separate command, `agy-delegate cleanup <run-id>` — cleanup force-removes the worktree, uncommitted work included, so never chain it after `;`. Cleanup also closes the Rex pane the run opened.
+4. **Land it.** agy never commits, so its work sits uncommitted in `workdir`. Good: `git add -A && git commit` there, then cherry-pick or merge it onto your branch and check `git log` (or copy the outputs). Not good: re-delegate with a sharper `goal`, or fix it yourself. Only then, as a separate command, `agy-delegate cleanup <run-id>` — cleanup refuses while the worktree has uncommitted changes; add `--discard` only when you really want them gone. Cleanup also closes the Rex pane the run opened.
 
 5. **Report** which part agy did and how you checked it.
 

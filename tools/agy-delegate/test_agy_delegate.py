@@ -223,6 +223,17 @@ def test_a_broken_panel_never_fails_the_task(env):
     assert go({"goal": "x", "repo": repo(env)}, env, opener=broken)["status"] == "done"
 
 
+def test_cleanup_refuses_to_delete_uncommitted_work(env):
+    """2026-11-19: cleanup ran after a failed `git add` (chained with `;`) and force-removed 17 changed files.
+    Uncommitted changes in the worktree now stop cleanup; throwing them away takes an explicit discard."""
+    result = go({"goal": "x", "repo": repo(env)}, env, FakeAgy(edit=lambda cwd: (cwd / "a.txt").write_text("n")))
+    with pytest.raises(agy.TaskError, match="--discard"):
+        agy.cleanup(result["run_id"], paths=env)
+    assert (Path(result["workdir"]) / "a.txt").read_text() == "n"
+    agy.cleanup(result["run_id"], paths=env, discard=True)
+    assert not Path(result["workdir"]).exists()
+
+
 def test_cleanup_closes_the_runs_panel(env):
     result = go({"goal": "x", "repo": repo(env)}, env, opener=lambda run_id: "block:pane-1")
     closed = []
