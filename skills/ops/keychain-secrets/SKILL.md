@@ -55,6 +55,10 @@ Missing fields are allowed (e.g. before first rotation or when no expiry is set)
 - **Deleting requires explicit approval**: never run `retire --yes` without the owner's explicit OK in the current session.
 - **Why `security -w` is accepted**: internally, `keychain-secret` reads the secret via `read -s` (TTY) or stdin (pipe) and calls `security add-generic-password ... -w "$secret"`. Passing `-w` to `security` briefly exposes the argument in local `ps` during the sub-millisecond call; this is accepted on a single-user Mac because `security` has no non-interactive stdin password flag for `-U` updates, while `keychain-secret` keeps the value out of shell history, agent context, and logs.
 
+## Reading Values as a Human
+
+The registry's `Get` column must give the owner plain text with no agent involved. `security find-generic-password -w` prints the value as **hex** whenever it holds any non-ASCII or non-printable byte (Chinese in a JSON blob, a newline), so new rows use `keychain-secret get`, which detects that case (via `security -g`) and decodes it. Without the tool: Keychain Access.app → search the service → double-click → tick **Show password**; or append `| xxd -r -p` to the `security ... -w` command for hex-printed items only.
+
 ## Lifecycle Commands & Same-Session Registry Actions
 
 Tool: `keychain-secret` on PATH (`~/.local/bin/keychain-secret` → `agent-skills/tools/keychain-secret`).
@@ -62,7 +66,7 @@ Tool: `keychain-secret` on PATH (`~/.local/bin/keychain-secret` → `agent-skill
 | Action | Command | Same-session update in `[[Keychain Secrets Registry]]` |
 |---|---|---|
 | **Get** | `export X="$(keychain-secret get '<service>' ['<account>'])"` | None (look up the row first to find `<service>` and `<account>`). |
-| **Add** | `keychain-secret add '<service>' '<account>' [--expires YYYY-MM-DD] [--note TEXT]` | Add a row to the User-Managed table (`Created` = today, `Rotated` = `—`, `Expires` = date or `—`, `Status` = `active`, `Get` = `security find-generic-password -s '<service>' -a '<account>' -w`) + append `log.md`. |
+| **Add** | `keychain-secret add '<service>' '<account>' [--expires YYYY-MM-DD] [--note TEXT]` | Add a row to the User-Managed table (`Created` = today, `Rotated` = `—`, `Expires` = date or `—`, `Status` = `active`, `Get` = `keychain-secret get '<service>' '<account>'`) + append `log.md`. |
 | **Rotate** | `keychain-secret rotate '<service>' ['<account>'] [--expires YYYY-MM-DD]` | Update `Rotated` = today (and `Expires` if changed) on the row + append `log.md`. |
 | **Inspect** | `keychain-secret info '<service>' ['<account>']` | None (prints service, account, comment metadata, and Keychain timestamps — never the secret). |
 | **Set expiry** | `keychain-secret expire '<service>' ['<account>'] YYYY-MM-DD` | Update `Expires` = `YYYY-MM-DD` on the row in the User-Managed table + append `log.md`. |

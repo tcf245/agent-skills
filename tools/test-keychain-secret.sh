@@ -53,6 +53,7 @@ if sub == "find-generic-password":
     svce = ""
     acct = None
     want_w = False
+    want_g = False
     i = 0
     while i < len(rest):
         if rest[i] == "-s":
@@ -63,6 +64,9 @@ if sub == "find-generic-password":
             i += 2
         elif rest[i] == "-w":
             want_w = True
+            i += 1
+        elif rest[i] == "-g":
+            want_g = True
             i += 1
         else:
             i += 1
@@ -75,8 +79,17 @@ if sub == "find-generic-password":
         sys.stderr.write("security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.\n")
         sys.exit(44)
     s, a, info = matches[0]
+    secret = info["secret"]
+    # Mirror real `security`: non-printable or non-ASCII values come out as hex.
+    is_hex = any(not (0x20 <= b < 0x7f) for b in secret.encode("utf-8"))
     if want_w:
-        sys.stdout.write(info["secret"] + "\n")
+        sys.stdout.write((secret.encode("utf-8").hex() if is_hex else secret) + "\n")
+    elif want_g:
+        sys.stdout.write(format_item(s, a, info))
+        if is_hex:
+            sys.stderr.write(f'password: 0x{secret.encode("utf-8").hex().upper()}  "<octal>"\n')
+        else:
+            sys.stderr.write(f'password: "{secret}"\n')
     else:
         sys.stdout.write(format_item(s, a, info))
     sys.exit(0)
@@ -235,6 +248,15 @@ assert_contains "$info_exp" "created:  2026-11-01" "expire preserves created"
 assert_contains "$info_exp" "rotated:  2026-11-18" "expire preserves rotated"
 assert_contains "$info_exp" "expires:  2026-11-25" "expire updates expires"
 assert_eq "$("$TOOL" get "dabia/backend/production/SECRET_KEY")" "rotated-secret-value-2" "expire preserves secret value"
+
+# 6b. Non-ASCII values: real `security -w` prints hex; get must return plain text
+#     and expire must not re-save the hex string as the secret.
+printf '%s' '{"name_en":"TAN","name_zh":"谭"}' | "$TOOL" add "passport-probe" "eric" 2>/dev/null
+assert_eq "$("$TOOL" get "passport-probe" "eric")" '{"name_en":"TAN","name_zh":"谭"}' "get decodes hex-printed non-ASCII value"
+"$TOOL" expire "passport-probe" "eric" "2027-01-01" 2>/dev/null
+assert_eq "$("$TOOL" get "passport-probe" "eric")" '{"name_en":"TAN","name_zh":"谭"}' "expire keeps non-ASCII value intact"
+printf 'deadbeef' | "$TOOL" add "hexlike-key" "eric" 2>/dev/null
+assert_eq "$("$TOOL" get "hexlike-key" "eric")" "deadbeef" "get leaves an ASCII hex-looking secret untouched"
 
 # 7. retire dry-run vs --yes
 printf 'temp-secret' | "$TOOL" add "temp-key" "eric" 2>/dev/null
