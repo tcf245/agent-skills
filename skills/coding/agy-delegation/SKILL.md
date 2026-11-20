@@ -1,6 +1,6 @@
 ---
 name: agy-delegation
-description: Use when a task has a big, well-scoped execution part (batch edits across many files, i18n/translation, bulk text, writing tests, collecting and drafting from the wiki) or when Claude's quota is past 50%. Hand that part to agy (Gemini through Google's official Antigravity CLI) with the `agy-delegate` tool; you judge, write the task, and verify.
+description: Use when a task has a big, well-scoped execution part (batch edits across many files, i18n/translation, bulk text, writing tests, collecting and drafting from the wiki), when a question needs fresh web facts about everyday life (restaurants, shops, opening hours, prices, local how-tos), or when Claude's quota is past 50%. Hand that part to agy (Gemini through Google's official Antigravity CLI) with the `agy-delegate` tool; you judge, write the task, and verify.
 type: workflow
 triggers:
   - "交给 agy"
@@ -12,6 +12,10 @@ triggers:
   - "大量文件"
   - "quota is running low"
   - "额度不够"
+  - "附近好吃的"
+  - "餐厅推荐"
+  - "营业时间"
+  - "生活百科"
 platforms: [cc]
 ---
 
@@ -45,6 +49,18 @@ agy-delegate quota
 **Keep:** anything that needs accounts (mail, calendar, Discord, databases), deploys and publishing, secrets, hard-to-undo actions, trade-off decisions, and small jobs that take a few minutes.
 
 Don't sync other skills or MCP servers to agy. Put only the rules this task needs into `rules`.
+
+## Life and web questions (Eric 2026-11-20)
+
+Gemini is strong on everyday knowledge and agy has Google Search, so questions that need fresh facts from the web go to agy: restaurants and shops nearby, opening hours, prices, events, local procedures, general "how do I" knowledge. This saves Claude quota for judgment.
+
+What agy can and cannot do (probe 2026-11-20, run `20261120-162931-3d5b`): it has `search_web` (Google Search grounding, cites sources through `vertexaisearch.cloud.google.com` redirect links). It has **no** Google Maps/Places tool and no URL fetch, so ratings and review counts arrive second-hand (Tabelog, blogs, travel sites), not live from Maps. A three-restaurant query took 86 s and 32k tokens on Hydrogen.
+
+- Package: no `repo`, `verify: "true"`, `model: gemini-4-hydrogen-high` (`gemini-3.8-flash-*` when speed matters more than care), `timeout_min: 10`. Put the person's constraints in `goal` (area, time, budget, who is coming, allergies) but no names, phone numbers or booking numbers: the question goes to Google.
+- Rules to pass: every fact comes from a search result in this run with its source; give today's date; say what could not be confirmed; answer in the user's language; give a decision and one fallback, not a long list.
+- Your check: read `summary`. For facts the person will act on (hours today, reservation rules, prices), open the official page yourself when you can, or mark them 未核实. Replace the redirect links with the site names; keep at most one link per place.
+- Quota: these runs use the `gemini` bucket. When it is below 50% the tool swaps to `argon`; when both are low, answer yourself with WebSearch instead of waiting.
+- Say in the reply that Gemini looked it up.
 
 ## How
 
