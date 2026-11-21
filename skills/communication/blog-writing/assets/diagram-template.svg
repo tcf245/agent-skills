@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" font-family="PingFang SC, Hiragino Sans GB, Heiti SC, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8a8580"/></marker>
+    <marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97757"/></marker>
+    <style>
+      .n{font-size:15px;font-weight:700;fill:#d97757}
+      .t{font-size:17px;font-weight:600;fill:#1f1e1d}
+      .s{font-size:13px;fill:#6b6560}
+      .l{font-size:12.5px;fill:#d97757}
+      .box{fill:#ffffff;stroke:#d9d3ca;stroke-width:1.5}
+      .hot{fill:#fbeee8;stroke:#d97757;stroke-width:2}
+      .code{fill:#eef3ec;stroke:#9db596;stroke-width:1.5}
+      .ext{fill:#f1ede6;stroke:#d9d3ca;stroke-width:1.5}
+      .e{stroke:#8a8580;stroke-width:1.6;fill:none;marker-end:url(#a)}
+      .eh{stroke:#d97757;stroke-width:2;fill:none;marker-end:url(#c)}
+    </style>
+  </defs>
+  <rect width="1280" height="640" fill="#f8f6f3"/>
+  <text x="40" y="58" font-size="26" font-weight="700" fill="#1f1e1d">Workout card loop</text>
+  <text x="40" y="86" class="s">The model plans and reviews (orange). Logging during the workout is plain code (green), so it uses no quota.</text>
+
+  <rect x="40" y="130" width="260" height="110" rx="12" class="box"/>
+  <text x="62" y="162" class="n">1</text><text x="84" y="162" class="t">Ask for today's session</text>
+  <text x="62" y="190" class="s">message the coach in #fitness</text>
+  <text x="62" y="212" class="s">text or voice</text>
+
+  <rect x="350" y="130" width="260" height="110" rx="12" class="hot"/>
+  <text x="372" y="162" class="n">2</text><text x="394" y="162" class="t">Coach issues a card</text>
+  <text x="372" y="190" class="s">create_workout tool</text>
+  <text x="372" y="212" class="s">weights from the last log + plan</text>
+
+  <rect x="660" y="130" width="260" height="110" rx="12" class="code"/>
+  <text x="682" y="162" class="n">3</text><text x="704" y="162" class="t">Tick sets while training</text>
+  <text x="682" y="190" class="s">Discord buttons or a web page</text>
+  <text x="682" y="212" class="s">weight · reps · RIR · notes</text>
+
+  <rect x="970" y="130" width="270" height="110" rx="12" class="code"/>
+  <text x="992" y="162" class="n">4</text><text x="1014" y="162" class="t">Submit</text>
+  <text x="992" y="190" class="s">the first step that queues</text>
+  <text x="992" y="212" class="s">a model task</text>
+
+  <rect x="970" y="330" width="270" height="110" rx="12" class="hot"/>
+  <text x="992" y="362" class="n">5</text><text x="1014" y="362" class="t">Coach reviews</text>
+  <text x="992" y="390" class="s">compares the log with the plan</text>
+  <text x="992" y="412" class="s">replies with feedback</text>
+
+  <rect x="660" y="330" width="260" height="110" rx="12" class="ext"/>
+  <text x="682" y="362" class="n">6</text><text x="704" y="362" class="t">Record in the wiki</text>
+  <text x="682" y="390" class="s">training log page</text>
+  <text x="682" y="412" class="s">trend chart on the web page</text>
+
+  <rect x="350" y="330" width="260" height="110" rx="12" class="hot"/>
+  <text x="372" y="362" class="n">7</text><text x="394" y="362" class="t">Adjust the next plan</text>
+  <text x="372" y="390" class="s">progress, hold, or deload</text>
+  <text x="372" y="412" class="s">pain notes override numbers</text>
+
+  <path d="M300,185 L348,185" class="e"/>
+  <path d="M610,185 L658,185" class="e"/>
+  <path d="M920,185 L968,185" class="e"/>
+  <path d="M1105,240 L1105,328" class="eh"/>
+  <path d="M970,385 L922,385" class="e"/>
+  <path d="M660,385 L612,385" class="e"/>
+  <path d="M480,330 L480,242" class="eh"/>
+  <text x="492" y="292" class="l">next session starts from the new plan</text>
+
+  <rect x="40" y="490" width="1200" height="110" rx="12" fill="none" stroke="#c9c1b6" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="62" y="526" class="t">Why a card instead of a chat</text>
+  <text x="62" y="556" class="s">Logging a set during a workout should take one tap and should not wait for a model. The card keeps the numbers structured,</text>
+  <text x="62" y="578" class="s">so the coach reviews real data instead of recalled data, and the same record feeds the next plan.</text>
+</svg>
