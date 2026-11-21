@@ -71,6 +71,7 @@ Tool: `keychain-secret` on PATH (`~/.local/bin/keychain-secret` → `agent-skill
 | **Inspect** | `keychain-secret info '<service>' ['<account>']` | None (prints service, account, comment metadata, and Keychain timestamps — never the secret). |
 | **Set expiry** | `keychain-secret expire '<service>' ['<account>'] YYYY-MM-DD` | Update `Expires` = `YYYY-MM-DD` on the row in the User-Managed table + append `log.md`. |
 | **Retire** | `keychain-secret retire '<service>' ['<account>'] [--yes]` | Without `--yes`, previews target. With `--yes` (after owner OK), deletes from Keychain; move row from User-Managed table to **Retired** table with `Retired on` = today and `Reason` + append `log.md`. |
+| **Backup** | `keychain-secret backup` (launchd `com.eric.keychain-backup` runs it daily 22:30) | None. Copies go to the vault's `_private/keychain-backup/` (never into the GitHub snapshot; any other destination is refused); recovery steps live in the registry's **Backup & Recovery** section. |
 | **Audit** | `keychain-secret audit [--registry PATH]` | Reconcile output (names only): add missing user-managed items (or classify under **App-managed**), remove/retire rows missing from Keychain, and rotate keys expired or expiring within 30 days. |
 
 ## Project `.env` Files

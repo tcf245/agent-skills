@@ -375,4 +375,22 @@ if "$TOOL" run "$MAPFILE" /usr/bin/true 2>/dev/null; then
   exit 1
 fi
 
+# 12. backup copies the login keychain file into a _private/ folder and keeps the newest N
+SRC_KC="$TMP/login.keychain-db"
+printf 'fake-keychain-bytes' > "$SRC_KC"
+BK="$TMP/vault/_private/keychain-backup"
+for d in 2026-11-01 2026-11-02 2026-11-03; do
+  KEYCHAIN_SECRET_TODAY="$d" "$TOOL" backup --source "$SRC_KC" --dest "$BK" --keep 2 >/dev/null
+done
+assert_eq "$(ls "$BK" | tr '\n' ' ')" "login-2026-11-02.keychain-db login-2026-11-03.keychain-db " "backup keeps the newest --keep copies"
+cmp -s "$SRC_KC" "$BK/login-2026-11-03.keychain-db" || { echo "FAIL: backup copy differs from source" >&2; exit 1; }
+assert_eq "$(stat -f '%Lp' "$BK/login-2026-11-03.keychain-db")" "600" "backup copy is owner-only"
+
+# 12b. backup refuses a destination outside _private/ (the vault snapshot pushes everything else to GitHub)
+if "$TOOL" backup --source "$SRC_KC" --dest "$TMP/vault/wiki" >/dev/null 2>&1; then
+  echo "FAIL: backup must refuse a destination outside _private/" >&2
+  exit 1
+fi
+[ ! -e "$TMP/vault/wiki" ] || { echo "FAIL: refused backup must not create the destination" >&2; exit 1; }
+
 echo "[test-keychain-secret] ✅ all tests passed"
