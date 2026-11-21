@@ -19,15 +19,9 @@ Eric's blog (`~/workspace/blog`, Next.js) reads the Notion database **📝 Blog 
 
 The site only lists pages with `Published` ticked; without a `Slug` a page has no URL.
 
-**The page must also be published to the web in Notion** (Share → Publish). The post body is read anonymously from the workspace's public `notion.site` domain (`getPageContent` in `lib/notion.ts`); a page that is not public lists fine on the home page but its URL returns 500 after about 15 seconds (`Notion page not found`). The MCP has no tool for this, so before ticking `Published`, ask Eric to publish the page to the web, then verify the live URL returns 200. Blog URL: `https://blog-inky-three-27.vercel.app/<slug>`.
+Since 2026-11-21 (blog commit `55fd247`) the post body is read through the official API with the integration token (`notion-compat`), so **ticking `Published` is the only switch**; pages do not need Publish to web. After ticking it, wait up to a minute (ISR) and confirm `https://blog-inky-three-27.vercel.app/<slug>` returns 200. Image URLs are signed and expire after an hour; ISR refreshes them every 60 seconds.
 
-Probe a page the way the blog does (run outside the sandbox, from `~/workspace/blog`, with the script at an explicit path, not `$TMPDIR`, which changes when the sandbox is off):
-
-```js
-import { NotionAPI } from "notion-client";
-const api = new NotionAPI({ apiBaseUrl: "https://handsome-polyanthus-984.notion.site/api/v3" });
-await api.getPage("<page-id>"); // throws "Notion page not found" if the page is not public
-```
+Known quirk: notion-compat wraps image captions in an extra array; `fixImageCaptions` in `lib/notion.ts` flattens it. If a post with a new block type returns 500, render it locally with `keychain-secret run .env.keychain -- npx next dev` (outside the sandbox) to get a readable stack.
 
 ## Content
 
