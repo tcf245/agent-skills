@@ -18,6 +18,18 @@ First post written by an agent into the blog database: "agent-crew：在 Discord
 | 9 | Turn this case into a reusable writing skill | This skill | — |
 | later | Hard rule on tone, verbatim | Hard rule 1 | — |
 
+## v2 → Eric's second round
+
+| # | Feedback | What changed | Where it now lives |
+|---|---|---|---|
+| 1 | "Never tick Published" is too strict; an explicit instruction (even from the phone) is enough | Rule relaxed | Hard rule 4 |
+| 2 | `web` was a dangling node; pages are generated from Discord, links come back, and pages such as the FE quiz can "ask the teacher", so it is a loop (请考虑逻辑闭环) | Architecture: taskboard → web (publish), web → task queue (submit / ask), two-way arrows to the user; text in 一次性分享 explains the loop | Hard rule 8 |
+| 3 | Do not tie the delegation story to agy; any agent (Codex, others) can be scheduled (保持一点合理的抽象) | Section renamed "Claude 调度其他 agent"; diagram box "Worker agents: agy · Codex · others"; exact percentages removed | Hard rule 7 |
+| 4 | Do not name models; say light / standard / high tiers | "模型按档位分配" | Hard rule 7 |
+| 5 | Add two real screenshots (inbox push, fitness card), mosaic private parts, names may stay this time (有真实 case 贴图帮助理解) | Pixelated the personal domain, the city, and a child's health note; captions explain each screenshot | Hard rule 9 |
+| 6 | The bracketed remarks in feedback are writing principles too | Added as hard rules 7–9 | — |
+| 7 | Ops moved from admin to `#projects` (Engineer agent) | Text and diagram updated | Hard rule 10 |
+
 ## v1 phrases that were removed
 
 - Title "在 Discord 里养一支 AI 助理团队：agent-crew 搭建记" (养一支 is cute marketing) → plain title.
