@@ -15,7 +15,7 @@ Eric's blog (`~/workspace/blog`, Next.js) reads the Notion database **📝 Blog 
 | `Date` | date | `date:Date:start` = `YYYY-MM-DD`, `date:Date:is_datetime` = 0 |
 | `Tags` | multi_select | JSON array string, existing options `Tech`, `Design` |
 | `Lang` | select | `zh`, `en`, or `ja` |
-| `Published` | checkbox | Always `__NO__` from the agent |
+| `Published` | checkbox | `__NO__` until Eric says to publish |
 
 The site only lists pages with `Published` ticked; without a `Slug` a page has no URL.
 
