@@ -11,7 +11,7 @@ Eric's blog (`~/workspace/blog`, Next.js) reads the Notion database **📝 Blog 
 | Field | Type | Value |
 |---|---|---|
 | `Name` | title | Plain, descriptive title (hard rule 1) |
-| `Slug` | text | kebab-case English, unique; becomes the URL |
+| `Slug` | text | kebab-case English phrase of 3–6 words that says what the post does, e.g. `build-agent-crew-on-discord`; never a bare keyword or project name such as `agent-crew` (Eric, 2026-11-21: keywords should stay free for later posts) |
 | `Date` | date | `date:Date:start` = `YYYY-MM-DD`, `date:Date:is_datetime` = 0 |
 | `Tags` | multi_select | JSON array string, existing options `Tech`, `Design` |
 | `Lang` | select | `zh`, `en`, or `ja` |
