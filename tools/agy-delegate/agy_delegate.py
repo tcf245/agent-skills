@@ -79,7 +79,9 @@ GROUND_RULES = """规则（必须遵守）：
 效率（每多一步就多等一轮模型，按这些做）：
 - 任务给了方案或文件就照做、只读这些；够用就停，不要通读仓库，同一个文件不要重复读。
 - 合并步骤：几个文件用一条命令一起读（cat、sed -n），几项检查放进一条命令；同一个文件的多处改动合成一次写入，不要连着小改。
-- 先跑和改动相关的测试，最后只跑一次完整的验收命令；不要重复跑整套，也不要加跑任务没要求的检查。
+- 测试自己跑：和改动相关的用例与全量，哪个快跑哪个（整套一分钟内跑完就直接跑全量）；最后只跑一次完整的验收命令，不要重复跑整套，也不要加跑任务没要求的检查。
+- Python 项目用 uv（/opt/homebrew/bin/uv），锁定的依赖已经装好，直接 uv run。沙箱读不了 ~/.asdf，那里的 python、uv 都用不了，不要去找。
+- 沙箱里 git 用不了（worktree 的 .git 在沙箱外），不要跑 git；改了哪些文件由外面从 git 读。
 - 环境问题（缺依赖、路径、版本）先用约束里给的办法；还不行就停下，写进 questions，不要反复试。
 - 不要用 ask_permission、浏览器工具或子代理，任务明确要求时除外。
 - verification 只写命令和结果，不贴长日志。"""
@@ -103,15 +105,36 @@ class Paths:
 Runner = Callable[[list[str], Path, int, Path], tuple[int, str, str]]
 Opener = Callable[[str], "str | None"]  # returns the Rex block id of the pane it opened
 Closer = Callable[[str], None]
+Setup = Callable[[Path], dict]  # prepares a worktree's dependencies before agy starts; returns what it did
+UV = "/opt/homebrew/bin/uv"  # agy's sandbox cannot read ~/.asdf, where the other uv lives
+
+
+def agy_env(environ: dict | None = None) -> dict:
+    """agy's environment without ~/.asdf on PATH: its sandbox cannot read ~/.asdf (probe 2026-11-22), so an asdf shim
+    found first fails with 'operation not permitted' instead of falling through to /opt/homebrew/bin."""
+    env = dict(os.environ if environ is None else environ)
+    env["PATH"] = ":".join(p for p in env.get("PATH", "").split(":") if p and "/.asdf/" not in p + "/")
+    return env
+
+
+def _stamped(line: str) -> str:
+    """The log line with the time it arrived (agy's events carry none), so slow turns can be found afterwards."""
+    try:
+        event = json.loads(line)
+    except ValueError:
+        return line
+    if not isinstance(event, dict):
+        return line
+    return json.dumps({"at": datetime.now(JST).isoformat(timespec="milliseconds"), **event}, ensure_ascii=False) + "\n"
 
 
 def _run_agy(command: list[str], cwd: Path, timeout: int, log: Path) -> tuple[int, str, str]:
     lines = []
     with log.open("a") as out, subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                                 stderr=subprocess.PIPE, text=True) as proc:
+                                                 stderr=subprocess.PIPE, text=True, env=agy_env()) as proc:
         deadline = time.monotonic() + timeout
         for line in proc.stdout:
-            out.write(line)
+            out.write(_stamped(line))
             out.flush()
             lines.append(line)
             if time.monotonic() > deadline:
@@ -142,6 +165,20 @@ def _close_panel(block_id: str) -> None:
     rex = shutil.which("rex")
     if rex:
         subprocess.run([rex, "block", "close", block_id], capture_output=True, timeout=20, check=False)
+
+
+def _sync_uv(workdir: Path) -> dict:
+    """Install the repo's locked Python deps into the worktree, outside agy's sandbox: inside it, new package versions
+    are blocked (403 'in cooldown'), so `uv run` there must find everything already synced. A fixed command, never the
+    task's. Failing is reported, not fatal: agy can still read and edit."""
+    command = [UV, "sync", "--frozen", "--quiet"]
+    started = time.monotonic()
+    try:
+        proc = subprocess.run(command, cwd=workdir, capture_output=True, text=True, timeout=300, env=agy_env(), check=False)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return {"command": " ".join(command[1:]), "ok": False, "error": str(error)[-300:]}
+    out = {"command": " ".join(command[1:]), "ok": proc.returncode == 0, "seconds": round(time.monotonic() - started)}
+    return out if out["ok"] else out | {"error": (proc.stderr or proc.stdout).strip()[-300:]}
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -253,6 +290,23 @@ def _events(text: str):
             yield event
 
 
+def timing(stdout: str) -> dict:
+    """Where a run's time went, from agy's own step durations: model turns vs tool calls."""
+    turns, tools = [], []
+    thinking = 0
+    for event in _events(stdout):
+        step = event.get("step_update") or {}
+        if event.get("event") != "step_update" or step.get("state") != "DONE":
+            continue
+        if step.get("step_type") == "agent_response":
+            turns.append(float(step.get("duration_seconds") or 0))
+            thinking += int((step.get("usage") or {}).get("thinking_tokens") or 0)
+        elif step.get("step_type") == "tool":
+            tools.append(float(step.get("duration_seconds") or 0))
+    return {"turns": len(turns), "model_seconds": round(sum(turns)), "longest_turn_seconds": round(max(turns, default=0)),
+            "tool_calls": len(tools), "tool_seconds": round(sum(tools)), "thinking_tokens": thinking}
+
+
 def _call(spec: dict, prompt: str, workdir: Path, paths: Paths, runner: Runner, log: Path) -> dict:
     """One agy run; returns the fields it decides (status, summary or error, model, tokens)."""
     out = {"model": spec["model"]}
@@ -264,14 +318,16 @@ def _call(spec: dict, prompt: str, workdir: Path, paths: Paths, runner: Runner, 
     if payload is None:
         payload = {"status": "ERROR", "error": (stderr or stdout).strip()[-500:]}
     answer = payload.get("structured_output") or {}
-    out |= {"conversation_id": payload.get("conversation_id"), "tokens": (payload.get("usage") or {}).get("total_tokens")}
+    out |= {"conversation_id": payload.get("conversation_id"), "tokens": (payload.get("usage") or {}).get("total_tokens"),
+            "timing": timing(stdout)}
     if code != 0 or payload.get("status") != "SUCCESS" or not answer:
         return out | {"status": "error", "error": payload.get("error") or (stderr or "agy 没有返回结构化结果").strip()[-500:]}
     return out | {"status": answer.get("status", "done"), "summary": answer.get("summary", ""),
                   "verification_claimed": answer.get("verification", ""), "questions": answer.get("questions", [])}
 
 
-def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: Opener = _open_panel) -> dict:
+def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: Opener = _open_panel,
+        setup: Setup = _sync_uv) -> dict:
     spec = _check(task, paths)
     run_id = datetime.now(JST).strftime("%Y%m%d-%H%M%S-") + os.urandom(2).hex()
     workdir, branch = _prepare(spec, run_id, paths)
@@ -290,6 +346,9 @@ def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: O
     started = time.monotonic()
     result = {"run_id": run_id, "workdir": str(workdir), "branch": branch, "repo": str(spec["repo"]) if spec["repo"] else None,
               "verify": spec["verify"], "log": str(log)}
+    if branch and (workdir / "uv.lock").is_file():
+        result["setup"] = setup(workdir)
+        _log(log, {"event": "setup", **result["setup"]})
     prompt = _prompt(spec, paths)
     chosen = choose_model(spec["model"], agy_quota_left(paths))
     if chosen != spec["model"]:
@@ -327,7 +386,8 @@ def _log(log: Path, event: dict) -> None:
 
 def _ledger(paths: Paths, spec: dict, result: dict) -> None:
     line = {"at": datetime.now(JST).isoformat(timespec="seconds"), "run_id": result["run_id"], "requester": spec["requester"],
-            "model": result["model"], "fallback_from": result.get("fallback_from"), "repo": result["repo"], "wiki": spec["wiki"],
+            "goal": spec["goal"][:200], "model": result["model"],
+            "conversation_id": result.get("conversation_id"), "timing": result.get("timing"), "fallback_from": result.get("fallback_from"), "repo": result["repo"], "wiki": spec["wiki"],
             "status": result["status"], "seconds": result["seconds"], "tokens": result.get("tokens"),
             "files_changed": len(result["files_changed"])}
     _log(paths.runs / "ledger.jsonl", line)
@@ -366,6 +426,8 @@ def describe(event: dict) -> str | None:
     kind = event.get("event")
     if kind == "task":
         return f"📋 任务：{event.get('goal', '')}\n   模型 {event.get('model')} · 目录 {event.get('workdir')}"
+    if kind == "setup":
+        return f"📦 {event.get('command')}：{'好了' if event.get('ok') else '失败 ' + str(event.get('error', ''))}"
     if kind == "init":
         return "▶ agy 开始"
     if kind == "fallback":

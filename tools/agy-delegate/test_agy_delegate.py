@@ -380,3 +380,93 @@ def test_agy_quota_can_be_recorded_from_the_command_line(env, monkeypatch, capsy
     assert json.loads(capsys.readouterr().out)["argon"]["left"] == 0.1874
     assert agy.main(["agy-quota", "hydrogen", "99"]) == 0  # Hydrogen and Flash are names of the gemini bucket
     assert "gemini" in json.loads(capsys.readouterr().out)
+
+
+# ---- 2026-11-22: speed (effort), tests runnable inside agy's sandbox, timing in the ledger ----
+
+def test_no_effort_flag_because_agy_rejects_it_for_every_allowed_model(env):
+    """Live 2026-11-22: Orchestrator says '--effort is not supported', suffixed models ('-low', '-high') say it conflicts.
+    Effort is chosen by the model suffix instead, e.g. gemini-4-neon-medium."""
+    fake = FakeAgy()
+    go({"goal": "x", "repo": repo(env)}, env, fake)
+    assert "--effort" not in fake.calls[0]["command"]
+
+
+def test_agy_gets_a_path_without_asdf_because_its_sandbox_cannot_read_asdf():
+    """Probe 2026-11-22: inside `agy --sandbox`, ~/.asdf is unreadable, so the uv shim fails with 'operation not permitted'."""
+    env = agy.agy_env({"PATH": "/Users/e/.asdf/shims:/Users/e/.asdf/bin:/opt/homebrew/bin:/usr/bin", "HOME": "/Users/e"})
+    assert env["PATH"] == "/opt/homebrew/bin:/usr/bin" and env["HOME"] == "/Users/e"
+
+
+def test_the_prompt_says_to_run_whichever_tests_are_faster_itself(env):
+    fake = FakeAgy()
+    go({"goal": "改一个函数", "repo": repo(env)}, env, fake)
+    prompt = fake.calls[0]["command"][fake.calls[0]["command"].index("-p") + 1]
+    assert "哪个快跑哪个" in prompt and "~/.asdf" in prompt and "git 用不了" in prompt
+
+
+TIMED = [
+    {"event": "step_update", "step_update": {"state": "DONE", "step_type": "agent_response", "duration_seconds": 180.4,
+                                             "usage": {"thinking_tokens": 21000, "total_tokens": 25000}}},
+    {"event": "step_update", "step_update": {"state": "DONE", "step_type": "tool", "tool_name": "read_file", "duration_seconds": 2.0}},
+    {"event": "step_update", "step_update": {"state": "DONE", "step_type": "tool", "tool_name": "edit_file", "duration_seconds": 3.5}},
+    {"event": "step_update", "step_update": {"state": "DONE", "step_type": "agent_response", "duration_seconds": 20.0,
+                                             "usage": {"thinking_tokens": 500, "total_tokens": 3000}}},
+    {"event": "result", "result": OK},
+]
+
+
+class TimedAgy(FakeAgy):
+    def __call__(self, command, cwd, timeout, log):
+        self.calls.append({"command": command, "cwd": Path(cwd), "timeout": timeout})
+        out = "\n".join(json.dumps(e) for e in TIMED) + "\n"
+        with log.open("a") as f:
+            f.write(out)
+        return 0, out, ""
+
+
+def test_the_ledger_keeps_goal_and_where_the_time_went_after_the_log_is_cleaned(env):
+    result = go({"goal": "改 a.txt 的第一行" * 30, "repo": repo(env)}, env, TimedAgy())
+    agy.cleanup(result["run_id"], paths=env, closer=lambda b: None)
+    line = json.loads((env.runs / "ledger.jsonl").read_text().splitlines()[-1])
+    assert line["goal"].startswith("改 a.txt 的第一行") and len(line["goal"]) <= 200
+    assert line["conversation_id"] == "c1"
+    assert line["timing"] == {"turns": 2, "model_seconds": 200, "longest_turn_seconds": 180, "tool_calls": 2,
+                              "tool_seconds": 6, "thinking_tokens": 21500}
+    assert result["timing"] == line["timing"]
+
+
+def test_log_lines_get_a_timestamp(tmp_path):
+    log = tmp_path / "x.log.jsonl"
+    code, out, _ = agy._run_agy([sys.executable, "-c", "print('{\"event\": \"init\"}'); print('plain')"], tmp_path, 30, log)
+    lines = log.read_text().splitlines()
+    assert code == 0 and "at" in json.loads(lines[0]) and lines[1] == "plain"
+    assert json.loads(out.splitlines()[0]) == {"event": "init"}  # stdout itself is unchanged
+
+
+def test_a_uv_repo_gets_its_locked_deps_synced_before_agy_starts(env):
+    """agy's sandbox blocks new package versions (403 'in cooldown' from files.pythonhosted.org, 2026-11-22),
+    so the tool syncs the lockfile outside the sandbox first and agy's `uv run` needs no network."""
+    (env.workspace / "proj" / "uv.lock").write_text("")
+    _git(env.workspace / "proj", "add", "-A")
+    _git(env.workspace / "proj", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "lock")
+    synced = []
+    result = agy.run({"goal": "x", "repo": repo(env)}, paths=env, runner=FakeAgy(), opener=no_panel,
+                     setup=lambda workdir: synced.append(workdir) or {"command": "uv sync --frozen", "ok": True, "seconds": 2})
+    assert synced == [Path(result["workdir"])] and result["setup"]["ok"]
+
+
+def test_no_setup_without_a_lockfile(env):
+    synced = []
+    result = agy.run({"goal": "x", "repo": repo(env)}, paths=env, runner=FakeAgy(), opener=no_panel,
+                     setup=lambda workdir: synced.append(workdir) or {})
+    assert synced == [] and "setup" not in result
+
+
+def test_a_failed_sync_does_not_stop_the_run(env):
+    (env.workspace / "proj" / "uv.lock").write_text("")
+    _git(env.workspace / "proj", "add", "-A")
+    _git(env.workspace / "proj", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "lock")
+    result = agy.run({"goal": "x", "repo": repo(env)}, paths=env, runner=FakeAgy(), opener=no_panel,
+                     setup=lambda workdir: {"command": "uv sync --frozen", "ok": False, "error": "boom"})
+    assert result["status"] == "done" and result["setup"]["error"] == "boom"

@@ -19,7 +19,7 @@ Eric's blog (`~/workspace/blog`, Next.js) reads the Notion database **📝 Blog 
 
 The site only lists pages with `Published` ticked; without a `Slug` a page has no URL.
 
-Since 2026-11-21 (blog commit `55fd247`) the post body is read through the official API with the integration token (`notion-compat`), so **ticking `Published` is the only switch**; pages do not need Publish to web. After ticking it, wait up to a minute (ISR) and confirm `https://blog-inky-three-27.vercel.app/<slug>` returns 200. Image URLs are signed and expire after an hour; ISR refreshes them every 60 seconds.
+Since 2026-11-21 (blog commit `55fd247`) the post body is read through the official API with the integration token (`notion-compat`), so **ticking `Published` is the only switch**; pages do not need Publish to web. After ticking it, wait up to a minute (ISR) and confirm `https://blog-inky-three-27.vercel.app/<slug>` returns 200. Image URLs are signed and expire after an hour; ISR refreshes them every 60 seconds. Since blog PR #4 (2026-11-22, FB-054) images load from the signed S3 URL directly; Notion's `www.notion.so/image` proxy answered "User does not have access" for pages never published to the web. If images break again, open the `<img>` src of the live page and request it.
 
 Known quirk: notion-compat wraps image captions in an extra array; `fixImageCaptions` in `lib/notion.ts` flattens it. If a post with a new block type returns 500, render it locally with `keychain-secret run .env.keychain -- npx next dev` (outside the sandbox) to get a readable stack.
 
