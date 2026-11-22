@@ -16,7 +16,7 @@ Eric's blog reads from a Notion database. You research the subject from primary 
 
 1. **Tone (Eric, 2026-11-21, verbatim):** 除非有特定指向性，否则请尽量不要使用网络流行用语，不用考虑流量和吸引眼球，不要用震惊体，请用一个平静的视角和口吻来叙述，保持 taste。
    - No internet slang or hype words (它很脆, 拉满, 爆炸, 炸裂, 封神, 王炸, 杀疯了, 天花板, 绝绝子, 养一支…). No clickbait or 震惊体 titles. No 吸睛 hooks.
-   - Titles state the subject plainly, e.g. `agent-crew：在 Discord 上搭建家庭 AI 助理团队`.
+   - Titles state the subject plainly and read like a person named the post: short, no stacked clauses. `你好：这个博客为什么建，以及怎么搭起来的` read as machine-made to Eric (2026-11-22: 怎么看都不像人类写出来的，读起来也别扭); avoid the `X：A，以及 B` pattern. Give Eric two alternatives in the report.
    - Describe what the thing does and why, in plain declarative sentences. Let facts carry weight; do not add adjectives to sell them.
 2. **Privacy masking.** No real names of Eric, family members, or other people in the body or diagrams; write 我, 家人, 一位家庭成员, 家里人. Also leave out personal domains, Discord/Notion IDs, emails, account numbers, children's details, and anything from health or finance records. When unsure, mask it and mention it in your report.
 3. **Diagrams contain no Chinese.** All diagram text is English so the same images work for a future bilingual (zh/en) version.

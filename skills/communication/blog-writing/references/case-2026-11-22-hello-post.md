@@ -14,7 +14,17 @@ agy on round 1: no tone or privacy problems; facts matched the brief. The flat s
 
 ## Round 2
 
-Brief v2 quoted the feedback, ranked each section, merged two sections, and `check.py` rejected the removed details (commit count, coral colour, December dates) and required 4–5 headings. agy finished in about 4 minutes; front end ≈195 / 110 / 45 characters for style / logo / fonts. Waiting for Eric's review and his diagram choice.
+Brief v2 quoted the feedback, ranked each section, merged two sections, and `check.py` rejected the removed details (commit count, coral colour, December dates) and required 4–5 headings. agy finished in about 4 minutes; front end ≈195 / 110 / 45 characters for style / logo / fonts. Eric picked the hand-drawn diagram (fireworks version removed; he upgraded the fireworks skill himself).
+
+## Round 2 → Eric's feedback
+
+| # | Feedback | Fix |
+|---|---|---|
+| 1 | Notion also solves cross-platform writing; a whole post can be done without a computer | Added to the Notion section, ranked after agent-friendliness |
+| 2 | Title `你好：这个博客为什么建，以及怎么搭起来的` does not read as human-written | Hard rule 1 title guidance: no `X：A，以及 B`; offer alternatives |
+| 3 | Date the post a month earlier (2026-10-22); no recent dates in the text, it was written last month and published late | Brief v3 removes absolute dates and the line about the earlier agent-crew post (published after the new date); `check.py` rejects them |
+
+When a post is back-dated, check every relative reference ("前一篇", "最近", "今天") against the new date, not only the explicit dates.
 
 ## Notes
 
