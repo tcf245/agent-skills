@@ -1,4 +1,4 @@
-# Case: hello post, agy-led trial (2026-11-22, in progress)
+# Case: hello post, agy-led trial (2026-11-22)
 
 "你好：这个博客为什么建，以及怎么搭起来的" (slug `hello-building-this-blog`). First agy-led trial (Workflow step 7): agy (Gemini, Orchestrator Neon) wrote every draft from a brief; Claude wrote the brief and `check.py`, drew the diagrams, checked facts, and handled Notion. Sources: blog `git log`, README, TODO, `lib/notion.ts`, `app/globals.css`, `app/icon.svg`.
 
@@ -25,6 +25,14 @@ Brief v2 quoted the feedback, ranked each section, merged two sections, and `che
 | 3 | Date the post a month earlier (2026-10-22); no recent dates in the text, it was written last month and published late | Brief v3 removes absolute dates and the line about the earlier agent-crew post (published after the new date); `check.py` rejects them |
 
 When a post is back-dated, check every relative reference ("前一篇", "最近", "今天") against the new date, not only the explicit dates.
+
+## Round 3 and outcome
+
+- Round 3: Notion can be managed from the phone, and the platform keeps the content safe (history, sync). Two sentences added; agy on the faster model finished in 71 s and changed only that section.
+- Eric then edited by hand and published: title `Hello`, slug `hello-my-first-blog-post`, page set to full width. Body unchanged from round 3.
+- After publishing, the post's image failed ("User does not have access") because the site used Notion's image proxy, which only serves pages once published to the web. Fixed in blog PR #4 (signed S3 URLs). Check images on the live page after every first publish.
+
+Tally: 3 rounds of content feedback after the first draft, plus a title Eric chose himself. agy's mistakes were few (no tone, privacy or fact errors); most rounds traced back to the brief (flat facts, a colon-style title example in this skill, a start date taken from git) or to new requests. Compared with the agent-crew post (Claude, 2–3 rounds): about even; the brief matters more than the writer.
 
 ## Notes
 
