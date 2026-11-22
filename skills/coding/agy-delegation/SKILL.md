@@ -37,16 +37,18 @@ agy-delegate quota
 
 | Used | Mode | What you do |
 |---|---|---|
-| < 50% | normal | Delegate what fits (below); do the rest yourself |
+| < 50% | normal | Still delegate by default (below); do yourself only what is on the Keep list |
 | 50–80% | conserve | Delegate every execution part agy can do; you only split, write packages, verify |
 | 80–95% | reserve | No substantive work yourself. Delegate, or stop and tell Eric when the quota resets |
 | ≥ 95% | stop | Only tell Eric where things stand and when it resets |
 
 ## What to hand over
 
-**Hand over:** clear scope, a lot of work or a long run, and a way to check it — batch edits or translations, applying a convention across many files, writing tests, collecting from the wiki and drafting.
+**Delegation is the default, at every quota level (Eric 2026-11-22, FB-056).** agy used about 10% of its 5-hour window while Claude often passed 80%, so the balance was wrong. Before doing a piece of work yourself, ask whether a task package could carry it.
 
-**Keep:** anything that needs accounts (mail, calendar, Discord, databases), deploys and publishing, secrets, hard-to-undo actions, trade-off decisions, and small jobs that take a few minutes.
+**Hand over:** anything with a clear scope and a way to check it — writing code, translation and any other text processing (rewrites, summaries, bulk edits), first drafts of specs and test plans, writing tests, verification runs (test suites, builds, starting a local server and checking routes or pages, comparing a translation with its source), applying a convention across many files, collecting from the wiki and drafting.
+
+**Keep:** anything that needs accounts (mail, calendar, Discord, Notion, databases), deploys and publishing, secrets, hard-to-undo actions, trade-off decisions, and jobs that take a few minutes. For verification, re-running the package's `verify` command and reading the diff stays with you (cheap, and agy's own report does not count); the long checks behind it go to agy.
 
 Don't sync other skills or MCP servers to agy. Put only the rules this task needs into `rules`.
 
