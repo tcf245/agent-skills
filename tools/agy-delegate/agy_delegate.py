@@ -79,7 +79,8 @@ GROUND_RULES = """规则（必须遵守）：
 效率（每多一步就多等一轮模型，按这些做）：
 - 任务给了方案或文件就照做、只读这些；够用就停，不要通读仓库，同一个文件不要重复读。
 - 合并步骤：几个文件用一条命令一起读（cat、sed -n），几项检查放进一条命令；同一个文件的多处改动合成一次写入，不要连着小改。
-- 先跑和改动相关的测试，最后只跑一次完整的验收命令；不要重复跑整套，也不要加跑任务没要求的检查。
+- 测试自己跑：和改动相关的用例与全量，哪个快跑哪个（整套一分钟内跑完就直接跑全量）；最后只跑一次完整的验收命令，不要重复跑整套，也不要加跑任务没要求的检查。
+- Python 项目用 uv（/opt/homebrew/bin/uv）。沙箱读不了 ~/.asdf，那里的 python、uv 都用不了，不要去找。
 - 环境问题（缺依赖、路径、版本）先用约束里给的办法；还不行就停下，写进 questions，不要反复试。
 - 不要用 ask_permission、浏览器工具或子代理，任务明确要求时除外。
 - verification 只写命令和结果，不贴长日志。"""
@@ -105,13 +106,32 @@ Opener = Callable[[str], "str | None"]  # returns the Rex block id of the pane i
 Closer = Callable[[str], None]
 
 
+def agy_env(environ: dict | None = None) -> dict:
+    """agy's environment without ~/.asdf on PATH: its sandbox cannot read ~/.asdf (probe 2026-11-22), so an asdf shim
+    found first fails with 'operation not permitted' instead of falling through to /opt/homebrew/bin."""
+    env = dict(os.environ if environ is None else environ)
+    env["PATH"] = ":".join(p for p in env.get("PATH", "").split(":") if p and "/.asdf/" not in p + "/")
+    return env
+
+
+def _stamped(line: str) -> str:
+    """The log line with the time it arrived (agy's events carry none), so slow turns can be found afterwards."""
+    try:
+        event = json.loads(line)
+    except ValueError:
+        return line
+    if not isinstance(event, dict):
+        return line
+    return json.dumps({"at": datetime.now(JST).isoformat(timespec="milliseconds"), **event}, ensure_ascii=False) + "\n"
+
+
 def _run_agy(command: list[str], cwd: Path, timeout: int, log: Path) -> tuple[int, str, str]:
     lines = []
     with log.open("a") as out, subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                                 stderr=subprocess.PIPE, text=True) as proc:
+                                                 stderr=subprocess.PIPE, text=True, env=agy_env()) as proc:
         deadline = time.monotonic() + timeout
         for line in proc.stdout:
-            out.write(line)
+            out.write(_stamped(line))
             out.flush()
             lines.append(line)
             if time.monotonic() > deadline:
@@ -253,6 +273,23 @@ def _events(text: str):
             yield event
 
 
+def timing(stdout: str) -> dict:
+    """Where a run's time went, from agy's own step durations: model turns vs tool calls."""
+    turns, tools = [], []
+    thinking = 0
+    for event in _events(stdout):
+        step = event.get("step_update") or {}
+        if event.get("event") != "step_update" or step.get("state") != "DONE":
+            continue
+        if step.get("step_type") == "agent_response":
+            turns.append(float(step.get("duration_seconds") or 0))
+            thinking += int((step.get("usage") or {}).get("thinking_tokens") or 0)
+        elif step.get("step_type") == "tool":
+            tools.append(float(step.get("duration_seconds") or 0))
+    return {"turns": len(turns), "model_seconds": round(sum(turns)), "longest_turn_seconds": round(max(turns, default=0)),
+            "tool_calls": len(tools), "tool_seconds": round(sum(tools)), "thinking_tokens": thinking}
+
+
 def _call(spec: dict, prompt: str, workdir: Path, paths: Paths, runner: Runner, log: Path) -> dict:
     """One agy run; returns the fields it decides (status, summary or error, model, tokens)."""
     out = {"model": spec["model"]}
@@ -264,7 +301,8 @@ def _call(spec: dict, prompt: str, workdir: Path, paths: Paths, runner: Runner, 
     if payload is None:
         payload = {"status": "ERROR", "error": (stderr or stdout).strip()[-500:]}
     answer = payload.get("structured_output") or {}
-    out |= {"conversation_id": payload.get("conversation_id"), "tokens": (payload.get("usage") or {}).get("total_tokens")}
+    out |= {"conversation_id": payload.get("conversation_id"), "tokens": (payload.get("usage") or {}).get("total_tokens"),
+            "timing": timing(stdout)}
     if code != 0 or payload.get("status") != "SUCCESS" or not answer:
         return out | {"status": "error", "error": payload.get("error") or (stderr or "agy 没有返回结构化结果").strip()[-500:]}
     return out | {"status": answer.get("status", "done"), "summary": answer.get("summary", ""),
@@ -327,7 +365,8 @@ def _log(log: Path, event: dict) -> None:
 
 def _ledger(paths: Paths, spec: dict, result: dict) -> None:
     line = {"at": datetime.now(JST).isoformat(timespec="seconds"), "run_id": result["run_id"], "requester": spec["requester"],
-            "model": result["model"], "fallback_from": result.get("fallback_from"), "repo": result["repo"], "wiki": spec["wiki"],
+            "goal": spec["goal"][:200], "model": result["model"],
+            "conversation_id": result.get("conversation_id"), "timing": result.get("timing"), "fallback_from": result.get("fallback_from"), "repo": result["repo"], "wiki": spec["wiki"],
             "status": result["status"], "seconds": result["seconds"], "tokens": result.get("tokens"),
             "files_changed": len(result["files_changed"])}
     _log(paths.runs / "ledger.jsonl", line)
