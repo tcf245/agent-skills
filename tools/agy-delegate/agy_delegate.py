@@ -80,7 +80,8 @@ GROUND_RULES = """规则（必须遵守）：
 - 任务给了方案或文件就照做、只读这些；够用就停，不要通读仓库，同一个文件不要重复读。
 - 合并步骤：几个文件用一条命令一起读（cat、sed -n），几项检查放进一条命令；同一个文件的多处改动合成一次写入，不要连着小改。
 - 测试自己跑：和改动相关的用例与全量，哪个快跑哪个（整套一分钟内跑完就直接跑全量）；最后只跑一次完整的验收命令，不要重复跑整套，也不要加跑任务没要求的检查。
-- Python 项目用 uv（/opt/homebrew/bin/uv）。沙箱读不了 ~/.asdf，那里的 python、uv 都用不了，不要去找。
+- Python 项目用 uv（/opt/homebrew/bin/uv），锁定的依赖已经装好，直接 uv run。沙箱读不了 ~/.asdf，那里的 python、uv 都用不了，不要去找。
+- 沙箱里 git 用不了（worktree 的 .git 在沙箱外），不要跑 git；改了哪些文件由外面从 git 读。
 - 环境问题（缺依赖、路径、版本）先用约束里给的办法；还不行就停下，写进 questions，不要反复试。
 - 不要用 ask_permission、浏览器工具或子代理，任务明确要求时除外。
 - verification 只写命令和结果，不贴长日志。"""
@@ -104,6 +105,8 @@ class Paths:
 Runner = Callable[[list[str], Path, int, Path], tuple[int, str, str]]
 Opener = Callable[[str], "str | None"]  # returns the Rex block id of the pane it opened
 Closer = Callable[[str], None]
+Setup = Callable[[Path], dict]  # prepares a worktree's dependencies before agy starts; returns what it did
+UV = "/opt/homebrew/bin/uv"  # agy's sandbox cannot read ~/.asdf, where the other uv lives
 
 
 def agy_env(environ: dict | None = None) -> dict:
@@ -162,6 +165,20 @@ def _close_panel(block_id: str) -> None:
     rex = shutil.which("rex")
     if rex:
         subprocess.run([rex, "block", "close", block_id], capture_output=True, timeout=20, check=False)
+
+
+def _sync_uv(workdir: Path) -> dict:
+    """Install the repo's locked Python deps into the worktree, outside agy's sandbox: inside it, new package versions
+    are blocked (403 'in cooldown'), so `uv run` there must find everything already synced. A fixed command, never the
+    task's. Failing is reported, not fatal: agy can still read and edit."""
+    command = [UV, "sync", "--frozen", "--quiet"]
+    started = time.monotonic()
+    try:
+        proc = subprocess.run(command, cwd=workdir, capture_output=True, text=True, timeout=300, env=agy_env(), check=False)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return {"command": " ".join(command[1:]), "ok": False, "error": str(error)[-300:]}
+    out = {"command": " ".join(command[1:]), "ok": proc.returncode == 0, "seconds": round(time.monotonic() - started)}
+    return out if out["ok"] else out | {"error": (proc.stderr or proc.stdout).strip()[-300:]}
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -309,7 +326,8 @@ def _call(spec: dict, prompt: str, workdir: Path, paths: Paths, runner: Runner, 
                   "verification_claimed": answer.get("verification", ""), "questions": answer.get("questions", [])}
 
 
-def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: Opener = _open_panel) -> dict:
+def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: Opener = _open_panel,
+        setup: Setup = _sync_uv) -> dict:
     spec = _check(task, paths)
     run_id = datetime.now(JST).strftime("%Y%m%d-%H%M%S-") + os.urandom(2).hex()
     workdir, branch = _prepare(spec, run_id, paths)
@@ -328,6 +346,9 @@ def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: O
     started = time.monotonic()
     result = {"run_id": run_id, "workdir": str(workdir), "branch": branch, "repo": str(spec["repo"]) if spec["repo"] else None,
               "verify": spec["verify"], "log": str(log)}
+    if branch and (workdir / "uv.lock").is_file():
+        result["setup"] = setup(workdir)
+        _log(log, {"event": "setup", **result["setup"]})
     prompt = _prompt(spec, paths)
     chosen = choose_model(spec["model"], agy_quota_left(paths))
     if chosen != spec["model"]:
@@ -405,6 +426,8 @@ def describe(event: dict) -> str | None:
     kind = event.get("event")
     if kind == "task":
         return f"📋 任务：{event.get('goal', '')}\n   模型 {event.get('model')} · 目录 {event.get('workdir')}"
+    if kind == "setup":
+        return f"📦 {event.get('command')}：{'好了' if event.get('ok') else '失败 ' + str(event.get('error', ''))}"
     if kind == "init":
         return "▶ agy 开始"
     if kind == "fallback":

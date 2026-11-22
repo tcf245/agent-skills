@@ -402,7 +402,7 @@ def test_the_prompt_says_to_run_whichever_tests_are_faster_itself(env):
     fake = FakeAgy()
     go({"goal": "改一个函数", "repo": repo(env)}, env, fake)
     prompt = fake.calls[0]["command"][fake.calls[0]["command"].index("-p") + 1]
-    assert "哪个快跑哪个" in prompt and "~/.asdf" in prompt
+    assert "哪个快跑哪个" in prompt and "~/.asdf" in prompt and "git 用不了" in prompt
 
 
 TIMED = [
@@ -442,3 +442,31 @@ def test_log_lines_get_a_timestamp(tmp_path):
     lines = log.read_text().splitlines()
     assert code == 0 and "at" in json.loads(lines[0]) and lines[1] == "plain"
     assert json.loads(out.splitlines()[0]) == {"event": "init"}  # stdout itself is unchanged
+
+
+def test_a_uv_repo_gets_its_locked_deps_synced_before_agy_starts(env):
+    """agy's sandbox blocks new package versions (403 'in cooldown' from files.pythonhosted.org, 2026-11-22),
+    so the tool syncs the lockfile outside the sandbox first and agy's `uv run` needs no network."""
+    (env.workspace / "proj" / "uv.lock").write_text("")
+    _git(env.workspace / "proj", "add", "-A")
+    _git(env.workspace / "proj", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "lock")
+    synced = []
+    result = agy.run({"goal": "x", "repo": repo(env)}, paths=env, runner=FakeAgy(), opener=no_panel,
+                     setup=lambda workdir: synced.append(workdir) or {"command": "uv sync --frozen", "ok": True, "seconds": 2})
+    assert synced == [Path(result["workdir"])] and result["setup"]["ok"]
+
+
+def test_no_setup_without_a_lockfile(env):
+    synced = []
+    result = agy.run({"goal": "x", "repo": repo(env)}, paths=env, runner=FakeAgy(), opener=no_panel,
+                     setup=lambda workdir: synced.append(workdir) or {})
+    assert synced == [] and "setup" not in result
+
+
+def test_a_failed_sync_does_not_stop_the_run(env):
+    (env.workspace / "proj" / "uv.lock").write_text("")
+    _git(env.workspace / "proj", "add", "-A")
+    _git(env.workspace / "proj", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "lock")
+    result = agy.run({"goal": "x", "repo": repo(env)}, paths=env, runner=FakeAgy(), opener=no_panel,
+                     setup=lambda workdir: {"command": "uv sync --frozen", "ok": False, "error": "boom"})
+    assert result["status"] == "done" and result["setup"]["error"] == "boom"
