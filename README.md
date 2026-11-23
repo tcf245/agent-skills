@@ -17,6 +17,7 @@ Eric's personal AI agent skill collection in native Agent Skills format (`skills
 | **Career** | `resume-coach`, `system-design-interview` | Resume review/rewrites and Google Docs updates; interview-grade system design with diagrams and wiki records |
 | **Coding** | `agy-delegation`, `jev-prefilter`, `working-rules` | Delegate large well-scoped execution tasks to `agy`; pre-filter bulk logs/candidates with `jev`; always-on standing rules (fix mistakes with checks before prose, obey hooks, secrets in Keychain, push yourself, evidence before done) |
 | **Communication** | `multilingual-coaching`, `blog-writing` | Always-on passive one-line corrections (`😇` English, `🌸` Japanese) at the end of replies; calm, masked, diagram-backed blog posts drafted into the Notion blog database |
+| **Design** | `frontend-design`, `web-artifacts-builder`, `theme-factory`, `canvas-design`, `algorithmic-art` | Vendored unchanged from [anthropics/skills](https://github.com/anthropics/skills) @ `e4bb5d9` (each keeps its own `LICENSE.txt`): distinctive UI direction, multi-component React/Tailwind/shadcn pages, preset themes for pages and decks, posters and static art as PNG/PDF, p5.js generative art |
 | **Context** | `personal-context-sync` | Read and maintain Eric's durable personal profile in the LLM Wiki |
 | **Language** | `jlpt-n2-coach` | JLPT N2 mock-test OCR, error bank tracking, knowledge summaries, and targeted drills |
 | **Media** | `quark-resource-search` | Search, filter, save, and organize Quark Cloud movie/TV resources with Alist |
@@ -52,6 +53,7 @@ skills/             ← Native skill directories (skills/<category>/<name>/SKILL
   career/           ← resume-coach, system-design-interview
   coding/           ← agy-delegation, jev-prefilter
   communication/    ← multilingual-coaching, blog-writing
+  design/           ← frontend-design, web-artifacts-builder, theme-factory, canvas-design, algorithmic-art (from anthropics/skills)
   context/          ← personal-context-sync
   language/         ← jlpt-n2-coach
   media/            ← quark-resource-search
