@@ -53,7 +53,7 @@ Goal: build a global view with minimum tokens. **Scan index.md first, load indiv
 
 | Script | What it does | When to use |
 |---|---|---|
-| `bash bin/lint.sh` | Automated checks: broken links, missing frontmatter, index sync, orphans, `.md.md` | Before any LINT session — run first, pass report to LLM |
+| `bash bin/lint.sh` | Automated checks: broken links, missing frontmatter, index sync, orphans, `.md.md`; plus report-only "Source gaps" (uncited raw files, pages missing `source:`) | Before any LINT session — run first, pass report to LLM |
 | `bash bin/ingest-pending.sh` | Lists raw/ files not yet ingested | Before INGEST — find what needs processing |
 | `python3 bin/jev_wiki.py related "raw/<file>.md"` | Jev ranks every `index.md` entry against the raw source; prints ≤10 pages to update or link | INGEST — instead of reading all of `index.md` |
 | `python3 bin/jev_wiki.py status-audit` | Jev scores every `status: refined` page's completeness; prints the ones that read like stubs | LINT — status-honesty check |
@@ -165,6 +165,8 @@ question.
 8. **Double-extension bug** — any file with a `.md.md` suffix?
 9. **Contradictions** — same claim stated differently in two pages → flag for human review
 10. **Raw-source integrity** — no files under `raw/` have been modified (LLM is forbidden from touching them)
+11. **Uncited raw** — every file in `raw/` (except `raw/assets/`) is cited by at least one wiki page (`source:`, `[[wikilink]]`, or a `raw/<file>` path). `lint.sh` lists the gaps under "Source gaps"; report only.
+12. **Missing `source:`** — every `wiki/records/reading/` page, and every concept/entity page stating a figure (%, ×/倍, ms, GB, 万, million…), has `source:`. `lint.sh` lists them; report only, never fill in or rewrite pages automatically.
 
 ---
 
@@ -318,6 +320,18 @@ Before writing, ask: **"Would this vanish if I didn't write it down?"** Record o
 
 ---
 
+## Answering from the wiki: exact facts go back to the source
+
+The wiki is the map and the conclusions; exact details come from `raw/` (Eric 2026-11-23, from Anthropic's *The components of agent memory*: wiki only 48%, wiki + search 61%, search only 53%. Real case: the *Ship your first Managed Agent* page was first written from a third-party summary and had paraphrasing errors that only the full transcript exposed).
+
+- **Before stating a number, date, quote, command, name, or other exact detail**, check it against the source: follow the page's `source:` to the raw file, or `grep -rn "<keyword>" raw/`; if the source is a URL not in `raw/`, re-read it. Quote the raw wording when it matters.
+- **If you answered from the wiki alone** (no raw file, or you did not check), say so in the answer: `（来自结论层，未对照原文）` / "(from the wiki's conclusion layer, not checked against the source)".
+- **If the raw text disagrees with the wiki page**, the raw text wins: answer from it and flag the page for correction in your reply (do not silently rewrite the page).
+- **When writing a reading page**, give each point that carries a number or quote a short pointer to where it sits in the source, e.g. `（原文 “Dreaming can build new memory representations” 一节）`, and set `source:` to the raw file.
+- No vector store or search service: `grep` over `raw/` plus `index.md` is the search layer.
+
+---
+
 ## LLM Behavior Rules
 
 1. **At the start of every session** — scan `index.md` to check whether the task touches existing knowledge.
@@ -330,6 +344,7 @@ Before writing, ask: **"Would this vanish if I didn't write it down?"** Record o
 8. **End-of-answer capture check** — after every exam-question explanation, ask internally: “Is this a reusable exam concept, option distinction, Japanese reading trap, or repeated weakness?” If yes, update the existing dated error-bank record in the same turn and append `log.md`; do not wait for the user to say INGEST/CAPTURE.
 9. **Write authorization** — Eric has pre-authorized normal LLM Wiki writes. Do not ask for approval before updating the Wiki, error bank, original-question record, `index.md`, or `log.md`; execute the scoped write directly.
 10. **Original-question preservation** — for exam screenshots, preserve the full question stem and all options when legible, in addition to the answer and explanation. If only a concept summary exists, mark the original text as missing rather than implying it was saved.
+11. **Exact facts** — numbers, dates, quotes and commands are checked against `raw/` before answering; wiki-only answers are labelled "来自结论层，未对照原文" (see *Answering from the wiki*).
 
 ---
 
