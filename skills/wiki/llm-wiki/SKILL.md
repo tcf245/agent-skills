@@ -307,6 +307,17 @@ These rules are a convention the model follows, not access control: a persona wi
 
 ---
 
+## What belongs in the wiki: things that vanish if not written
+
+Before writing, ask: **"Would this vanish if I didn't write it down?"** Record only what we worked out ourselves (Eric 2026-11-23, from Anthropic's *The components of agent memory*: "wiki 不记录 raw 的东西，要记经过消化、最后结论性的收获和感悟，这才是不写就会消失的东西").
+
+- **Write:** digested conclusions and insights; Eric's views and decisions with their reasons; private facts and preferences; mistakes made and lessons learned; what something means for our projects. Give each entry a date and its evidence where you can; mark a superseded entry "superseded by …" and an uncertain one "unverified / may be stale".
+- **Don't write:** public knowledge the LLM already has; anything that can be looked up again (calendar, todos, email, the source text); restatements of `raw/`. A wiki page bigger than its source has not abstracted anything.
+- **Keep `raw/` as is.** It is the evidence for later review and correction; just don't repeat it in the wiki layer.
+- **When something is finished**, ask "what reusable thing is left?" If nothing, keep no details.
+
+---
+
 ## LLM Behavior Rules
 
 1. **At the start of every session** — scan `index.md` to check whether the task touches existing knowledge.
