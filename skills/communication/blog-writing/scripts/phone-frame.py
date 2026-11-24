@@ -5,7 +5,7 @@ Usage: phone-frame.py <screenshot.png> <out.png> [--phone-height N] [--canvas Wx
 
 By default the screen keeps the screenshot's own pixels (no downscaling) and the canvas
 hugs the phone, so readers can zoom in and still read it. The blog shows portrait images
-narrower than the column (about phone size) and opens the full image on tap (Eric,
+at 60% of the column and opens the original file on tap (Eric,
 2026-11-24: keep the resolution, make it small on the page, not small in the file).
 Pixelate private data before framing (the frame does not hide anything).
 """
