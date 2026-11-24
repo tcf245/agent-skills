@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Put a phone screenshot in a simple iPhone-style frame on a transparent canvas.
 
-Usage: phone-frame.py <screenshot.png> <out.png> [--phone-height 1100] [--canvas 1600x1240]
+Usage: phone-frame.py <screenshot.png> <out.png> [--phone-height N] [--canvas WxH]
 
-The canvas is wider than the phone, so a blog that stretches images to the column
-width shows the phone at roughly real-phone size instead of a full-width screenshot.
+By default the screen keeps the screenshot's own pixels (no downscaling) and the canvas
+hugs the phone, so readers can zoom in and still read it. The blog shows portrait images
+narrower than the column (about phone size) and opens the full image on tap (Eric,
+2026-11-24: keep the resolution, make it small on the page, not small in the file).
 Pixelate private data before framing (the frame does not hide anything).
 """
 import argparse
@@ -18,8 +20,10 @@ def rounded_mask(size, radius):
     return mask
 
 
-def frame(shot_path, out_path, phone_height, canvas_size):
+def frame(shot_path, out_path, phone_height=None, canvas_size=None):
     shot = Image.open(shot_path).convert("RGB")
+    if phone_height is None:  # screen height == screenshot height: native pixels
+        phone_height = round(shot.height / (1 - 2 * 0.018))
     bezel = round(phone_height * 0.018)
     screen_h = phone_height - 2 * bezel
     screen_w = round(shot.width * screen_h / shot.height)
@@ -36,6 +40,9 @@ def frame(shot_path, out_path, phone_height, canvas_size):
                                             outline=(88, 88, 92, 255), width=2)
     phone.paste(shot, (bezel, bezel), rounded_mask(shot.size, inner_r))
 
+    if canvas_size is None:  # room for side buttons and the shadow, nothing more
+        margin = round(phone_height * 0.04)
+        canvas_size = (phone_w + 2 * margin, phone_height + 2 * margin)
     cw, ch = canvas_size
     canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
     x, y = (cw - phone_w) // 2, (ch - phone_height) // 2
@@ -61,8 +68,8 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("shot")
     p.add_argument("out")
-    p.add_argument("--phone-height", type=int, default=1100)
-    p.add_argument("--canvas", default="1600x1240")
+    p.add_argument("--phone-height", type=int, default=None, help="default: keep the screenshot's resolution")
+    p.add_argument("--canvas", default=None, help="WxH; default: hug the phone")
     a = p.parse_args()
-    w, h = (int(v) for v in a.canvas.split("x"))
-    frame(a.shot, a.out, a.phone_height, (w, h))
+    canvas = tuple(int(v) for v in a.canvas.split("x")) if a.canvas else None
+    frame(a.shot, a.out, a.phone_height, canvas)
