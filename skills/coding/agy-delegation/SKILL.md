@@ -70,7 +70,7 @@ What agy can and cannot do (probe 2026-11-20, run `20261120-162931-3d5b`): it ha
 
    | Field | Meaning |
    |---|---|
-   | `goal` | What to do and how far. agy has no context; be complete |
+   | `goal` | What to do and how far. agy has no context; be complete. For tasks over 3 steps, remind agy in `goal` to maintain `.agy/decisions.tsv` (the tool's ground rules already cover the format, so don't repeat the details) |
    | `repo` | A git repo under `~/workspace` (runs in a new worktree, branch `agy/<run-id>`; the original tree is untouched). Or omit it and list input files in `files` |
    | `rules` | The few rules from the relevant skills and the repo's CLAUDE.md/AGENTS.md for this task |
    | `verify` | A command that proves it worked. agy runs it; **you run it again** |
@@ -87,7 +87,7 @@ What agy can and cannot do (probe 2026-11-20, run `20261120-162931-3d5b`): it ha
 
    Inside Rex a pane opens on the right showing agy's steps live (`--no-panel` to skip). The run can take longer than one shell call allows: for anything over a few minutes, run it in the background and wait for the completion notice.
 
-3. **Verify.** Read `status`, `summary`, `questions`, `files_changed` (from git, not from agy), `wiki_changed`, `warning`. In `workdir`, run `verify` and look at `git diff` yourself. agy saying the tests pass does not count.
+3. **Verify.** Read `status`, `summary`, `questions`, `files_changed` (from git, not from agy), `wiki_changed`, `warning`, and `decisions`. When `decisions` is present, read that TSV first (adapted from Cursor's `pstack` `show-me-your-work`, Lauren Tan, MIT): scan each row's `evidence` pointer, spot-check key entries by opening `file:line` or re-running the cited command, and send the task back if `bad_rows` is non-empty or a `superseded` chain is unclear. Then run `verify` in `workdir` and check `git diff --stat` yourself (agy saying the tests pass does not count). Read the full `git diff` only for parts the decision log leaves unclear.
 
 4. **Land it.** agy never commits, so its work sits uncommitted in `workdir`. Good: `git add -A && git commit` there, then cherry-pick or merge it onto your branch and check `git log` (or copy the outputs). Not good: re-delegate with a sharper `goal`, or fix it yourself. Only then, as a separate command, `agy-delegate cleanup <run-id>` — cleanup refuses while the worktree has uncommitted changes; add `--discard` only when you really want them gone. Cleanup also closes the Rex pane the run opened.
 

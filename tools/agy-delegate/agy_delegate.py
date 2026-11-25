@@ -52,7 +52,8 @@ WEEK, FIVE_HOURS = 7 * 86400, 5 * 3600
 QUOTA_ERROR = re.compile(r"quota|exhaust|rate.?limit|limit (reached|exceeded)|\b429\b", re.IGNORECASE)
 DEFAULT_MINUTES, MAX_MINUTES = 30, 60
 SECRET_PARTS = (".env", ".ssh", "credentials", ".pem", ".key", ".p12", "id_rsa", "token", "secret")
-SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", ".agy-runs"}
+SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", ".agy-runs", ".agy"}
+DECISIONS_HEADER = ["ts", "phase", "decision", "why", "evidence", "result"]
 
 # Claude quota: Claude stays the gateway even when agy does the work, so its 5-hour window must not reach 100%.
 CONSERVE, RESERVE, STOP = 0.5, 0.8, 0.95
@@ -75,6 +76,7 @@ GROUND_RULES = """规则（必须遵守）：
 - 做完后自己检查结果；给了验收命令就运行它，在 verification 里写命令和结果。
 - 信息不够或需要决定时不要猜：status 写 needs_input，在 questions 里写问题。
 - summary 简短：做了什么、没做什么、要注意什么。
+- 改动超过 3 步时，在当前目录的 .agy/decisions.tsv 维护决策日志：第一行表头 ts\\tphase\\tdecision\\twhy\\tevidence\\tresult 六列，制表符分隔；每做一个决定追加一行（ts 用 ISO 时间；phase 如 read/plan/edit/verify；evidence 写证据指针，如 文件:行号、命令和它的结果摘要；result 写 ok/failed/superseded 等）；只追加，发现之前的决定错了就加一行新的写明覆盖哪一行，不改不删旧行。
 
 效率（每多一步就多等一轮模型，按这些做）：
 - 任务给了方案或文件就照做、只读这些；够用就停，不要通读仓库，同一个文件不要重复读。
@@ -277,7 +279,28 @@ def _changed(before: dict, after: dict) -> list[str]:
 
 
 def _git_changed(workdir: Path) -> list[str]:
-    return sorted(line[3:].split(" -> ")[-1] for line in _git(workdir, "status", "--porcelain", "--untracked-files=all").splitlines())
+    files = (line[3:].split(" -> ")[-1] for line in _git(workdir, "status", "--porcelain", "--untracked-files=all").splitlines())
+    return sorted(f for f in files if f != ".agy" and not f.startswith(".agy/"))
+
+
+def _collect_decisions(workdir: Path, dest: Path) -> dict | None:
+    """Copy workdir/.agy/decisions.tsv to `dest` (beside the run log, kept across cleanup), count rows/bad rows, delete workdir/.agy."""
+    agy_dir = workdir / ".agy"
+    tsv = agy_dir / "decisions.tsv"
+    decisions = None
+    if tsv.is_file():
+        shutil.copy2(tsv, dest)
+        lines = dest.read_text(encoding="utf-8", errors="replace").splitlines()
+        bad_rows = [1] if not lines or lines[0].split("\t") != DECISIONS_HEADER else []
+        for lineno, line in enumerate(lines[1:], start=2):
+            if len(line.split("\t")) != len(DECISIONS_HEADER):
+                bad_rows.append(lineno)
+        decisions = {"path": str(dest.resolve()), "rows": max(0, len(lines) - 1), "bad_rows": bad_rows}
+    if agy_dir.is_dir() and not agy_dir.is_symlink():
+        shutil.rmtree(agy_dir)
+    elif agy_dir.exists() or agy_dir.is_symlink():
+        agy_dir.unlink()
+    return decisions
 
 
 def _events(text: str):
@@ -369,11 +392,18 @@ def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: O
             prompt += "\n\n（换了模型接着做：这个目录里可能已有上一次没做完的改动，先看一下现状再继续。）"
         result |= _call(spec, prompt, workdir, paths, runner, log) | {"fallback_from": first}
     result["seconds"] = round(time.monotonic() - started)
+    if decisions := _collect_decisions(workdir, paths.runs / f"{run_id}.decisions.tsv"):
+        result["decisions"] = decisions
     result["files_changed"] = _git_changed(workdir) if branch else [n for n in _changed(before, _snapshot(workdir)) if not n.startswith("inputs/")]
+    warnings = []
     if spec["wiki"]:
         result["wiki_changed"] = _changed(wiki_before, _snapshot(paths.wiki))
         if spec["wiki"] == "read" and result["wiki_changed"]:
-            result["warning"] = "只读任务却改了 wiki 文件，请检查 wiki_changed"
+            warnings.append("只读任务却改了 wiki 文件，请检查 wiki_changed")
+    if "decisions" not in result and len(result["files_changed"]) > 3:
+        warnings.append(f"改了 {len(result['files_changed'])} 个文件但没有 decisions.tsv")
+    if warnings:
+        result["warning"] = "；".join(warnings)
     _log(log, {"event": "finished", "status": result["status"], "files_changed": result["files_changed"]})
     _ledger(paths, spec, result)
     return result
