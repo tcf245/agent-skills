@@ -470,3 +470,93 @@ def test_a_failed_sync_does_not_stop_the_run(env):
     result = agy.run({"goal": "x", "repo": repo(env)}, paths=env, runner=FakeAgy(), opener=no_panel,
                      setup=lambda workdir: {"command": "uv sync --frozen", "ok": False, "error": "boom"})
     assert result["status"] == "done" and result["setup"]["error"] == "boom"
+
+
+# ---- decision log (decisions.tsv) ----
+
+VALID_HEADER = "ts\tphase\tdecision\twhy\tevidence\tresult"
+
+
+def _write_decisions(cwd: Path, lines: list[str]) -> None:
+    (cwd / ".agy").mkdir(exist_ok=True)
+    (cwd / ".agy" / "decisions.tsv").write_text("\n".join(lines) + "\n")
+
+
+def test_decisions_tsv_is_copied_counted_and_agy_dir_is_removed_from_workdir(env):
+    def edit(cwd: Path):
+        (cwd / "a.txt").write_text("new\n")
+        _write_decisions(cwd, [
+            VALID_HEADER,
+            "2026-11-25T10:00:00+09:00\tread\tInspect a.txt\tNeed baseline\ta.txt:1\tok",
+            "2026-11-25T10:01:00+09:00\tedit\tUpdate a.txt\tRequested change\ta.txt:1\tok",
+        ])
+
+    result = go({"goal": "改 a.txt", "repo": repo(env)}, env, FakeAgy(edit=edit))
+    copied = Path(result["decisions"]["path"])
+    assert copied.is_absolute() and copied == (env.runs / f"{result['run_id']}.decisions.tsv").resolve()
+    assert result["decisions"]["rows"] == 2 and result["decisions"]["bad_rows"] == []
+    assert not (Path(result["workdir"]) / ".agy").exists()
+    assert result["files_changed"] == ["a.txt"]
+
+    agy.cleanup(result["run_id"], paths=env, closer=no_panel, discard=True)
+    assert not Path(result["workdir"]).exists()
+    assert copied.is_file() and len(copied.read_text().splitlines()) == 3
+
+
+def test_decisions_tsv_is_copied_even_when_agy_fails(env):
+    def edit(cwd: Path):
+        _write_decisions(cwd, [VALID_HEADER, "2026-11-25T10:00:00+09:00\tverify\tRun check\tCheck fails\tpytest:1 failed\tfailed"])
+
+    result = go({"goal": "x", "repo": repo(env)}, env, FakeAgy(edit=edit, returncode=1, result={"status": "ERROR", "error": "boom"}))
+    assert result["status"] == "error"
+    assert result["decisions"]["rows"] == 1 and result["decisions"]["bad_rows"] == []
+    assert Path(result["decisions"]["path"]).is_file()
+    assert not (Path(result["workdir"]) / ".agy").exists()
+
+
+def test_decisions_tsv_reports_bad_rows_for_five_columns_and_bad_header(env):
+    def edit_five_cols(cwd: Path):
+        _write_decisions(cwd, [
+            VALID_HEADER,
+            "2026-11-25T10:00:00+09:00\tread\tInspect a.txt\tBaseline\ta.txt:1\tok",
+            "2026-11-25T10:01:00+09:00\tedit\tOnly five cols\tMissing result\ta.txt:1",
+        ])
+
+    res1 = go({"goal": "x", "repo": repo(env)}, env, FakeAgy(edit=edit_five_cols))
+    assert res1["decisions"]["rows"] == 2 and res1["decisions"]["bad_rows"] == [3]
+
+    def edit_bad_header(cwd: Path):
+        _write_decisions(cwd, [
+            "ts\tphase\tdecision\twhy\tevidence",
+            "2026-11-25T10:00:00+09:00\tread\tInspect a.txt\tBaseline\ta.txt:1\tok",
+        ])
+
+    res2 = go({"goal": "x", "repo": repo(env)}, env, FakeAgy(edit=edit_bad_header))
+    assert res2["decisions"]["rows"] == 1 and res2["decisions"]["bad_rows"] == [1]
+
+
+def test_changing_four_files_without_decisions_tsv_sets_warning(env):
+    def edit_four(cwd: Path):
+        for name in ("f1.txt", "f2.txt", "f3.txt", "f4.txt"):
+            (cwd / name).write_text("x\n")
+
+    result = go({"goal": "批量改四个文件", "repo": repo(env)}, env, FakeAgy(edit=edit_four))
+    assert "decisions" not in result
+    assert len(result["files_changed"]) == 4
+    assert "改了 4 个文件但没有 decisions.tsv" in result["warning"]
+
+    def edit_three(cwd: Path):
+        for name in ("f1.txt", "f2.txt", "f3.txt"):
+            (cwd / name).write_text("x\n")
+
+    ok_three = go({"goal": "改三个文件", "repo": repo(env)}, env, FakeAgy(edit=edit_three))
+    assert "warning" not in ok_three
+
+
+def test_the_prompt_carries_the_decisions_log_rule(env):
+    fake = FakeAgy()
+    go({"goal": "改多个文件", "repo": repo(env)}, env, fake)
+    prompt = fake.calls[0]["command"][fake.calls[0]["command"].index("-p") + 1]
+    assert ".agy/decisions.tsv" in prompt
+    assert "ts\\tphase\\tdecision\\twhy\\tevidence\\tresult" in prompt
+    assert "只追加" in prompt
