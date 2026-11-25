@@ -73,6 +73,7 @@ GROUND_RULES = """规则（必须遵守）：
 - 只在当前目录里工作。不要 git commit、git push，不要 deploy，不要安装全局软件。
 - 不要读取或打印密钥：.env、令牌、证书、SSH 私钥、登录文件。
 - 命令被 hook 拦下（“被硬规则 … 拦下”）时照报错里的改法做；觉得规则不对就写进 questions，不要换个写法绕过。
+- 命令在沙箱里跑不了（缺网络、写不了缓存等）可以直接在沙箱外重跑，会自动批准；但不要 git commit/push、不要部署（kubectl、deploy.sh）、不要删当前目录以外的文件、不要往外部服务写数据（发消息、发 PR、改线上数据）。这些由 hook 硬拦。
 - 做完后自己检查结果；给了验收命令就运行它，在 verification 里写命令和结果。
 - 信息不够或需要决定时不要猜：status 写 needs_input，在 questions 里写问题。
 - summary 简短：做了什么、没做什么、要注意什么。
@@ -253,8 +254,9 @@ def _prompt(spec: dict, paths: Paths) -> str:
 
 
 def _command(spec: dict, prompt: str, paths: Paths) -> list[str]:
-    command = ["agy", "-p", prompt, "--model", spec["model"], "--sandbox", "--output-format", "stream-json",
-               "--json-schema", json.dumps(SCHEMA), "--print-timeout", f"{spec['minutes'] * 60}s"]
+    command = ["agy", "-p", prompt, "--model", spec["model"], "--sandbox", "--dangerously-skip-permissions",
+               "--output-format", "stream-json", "--json-schema", json.dumps(SCHEMA),
+               "--print-timeout", f"{spec['minutes'] * 60}s"]
     if spec["wiki"]:
         command += ["--add-dir", str(paths.wiki), "--add-dir", str(paths.wiki_skill.parent)]
     return command
