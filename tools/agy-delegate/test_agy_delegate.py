@@ -90,14 +90,15 @@ def test_a_repo_task_runs_in_its_own_worktree_and_leaves_the_original_untouched(
     assert result["status"] == "done" and result["summary"] == "改好了"
 
 
-def test_the_command_is_sandboxed_streamed_structured_and_on_orchestrator_neon_by_default(env):
+def test_the_command_is_sandboxed_skips_permissions_streamed_structured_and_on_orchestrator_neon_by_default(env):
     fake = FakeAgy()
     go({"goal": "x", "repo": repo(env)}, env, fake)
     command = fake.calls[0]["command"]
-    assert command[0] == "agy" and "--sandbox" in command and model_of(fake.calls[0]) == "gemini-pro-orchestrator-neon"
+    assert command[0] == "agy" and "--sandbox" in command and "--dangerously-skip-permissions" in command
+    assert command.index("--dangerously-skip-permissions") == command.index("--sandbox") + 1
+    assert model_of(fake.calls[0]) == "gemini-pro-orchestrator-neon"
     assert command[command.index("--output-format") + 1] == "stream-json"
     assert json.loads(command[command.index("--json-schema") + 1])["required"] == ["status", "summary"]
-    assert "--dangerously-skip-permissions" not in command
 
 
 @pytest.mark.parametrize("model", ["claude-opus-5-5-high", "claude-sonnet-5-5-high"])
@@ -131,7 +132,8 @@ def test_the_prompt_carries_goal_rules_and_the_ground_rules(env):
     go({"goal": "把文案翻成日语", "rules": ["键名不改"], "repo": repo(env)}, env, fake)
     prompt = fake.calls[0]["command"][fake.calls[0]["command"].index("-p") + 1]
     assert "把文案翻成日语" in prompt and "键名不改" in prompt
-    for rule in ("commit", "push", "deploy", ".env"):
+    assert "沙箱外" in agy.GROUND_RULES
+    for rule in ("commit", "push", "deploy", ".env", "沙箱外"):
         assert rule in prompt
 
 

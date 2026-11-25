@@ -109,6 +109,7 @@ A run costs time per step, not per token: every file read, edit and command is o
 ## Claude Code specifics
 
 - The sandbox lets this one command out through `sandbox.excludedCommands: ["agy-delegate *"]` in `~/.claude/settings.json` (agent-crew's admin has its own entry). Never add `dangerouslyDisableSandbox` to it. If it fails with `Operation not permitted`, the exclusion is missing; tell Eric.
+- Unattended `agy` runs use `--dangerously-skip-permissions` alongside `--sandbox` (Eric 2026-11-25, FB-066) because print mode soft-denies any confirmation and cancels the run; the guardrails are the worktree, the ground rules and the `hard_rules` PreToolUse hook (`~/.gemini/config/hooks.json`), which denies `git push`/`commit`, deploys and deletes outside the run folder for runs under `.agy-runs/`.
 - Use the Bash tool's background mode for runs over ~8 minutes.
 
 ## Anti-patterns
