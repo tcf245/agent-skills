@@ -366,10 +366,13 @@ def _prepare(spec: dict, run_id: str, paths: Paths) -> tuple[Path, str | None]:
     return workdir, None
 
 
-def _prompt(spec: dict, paths: Paths) -> str:
-    parts = [f"任务：{spec['goal']}"]
+def _prompt(spec: dict, paths: Paths, workdir: Path) -> str:
+    parts = [
+        f"任务：{spec['goal']}",
+        f"运行目录（绝对路径）：{workdir}。产出文件都写在这个目录里，用绝对路径写；终端的当前目录可能不是它。",
+    ]
     if spec["files"] and not spec["repo"]:
-        parts.append("输入文件在 inputs/ 里；产出写在当前目录。")
+        parts.append(f"输入文件在 {workdir / 'inputs'}（运行目录下的 inputs/）里；产出写在运行目录 {workdir}。")
     if spec["rules"]:
         parts.append("这个任务的约束：\n" + "\n".join(f"- {r}" for r in spec["rules"]))
     if spec["verify"]:
@@ -517,7 +520,7 @@ def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: O
     if branch and (workdir / "uv.lock").is_file():
         result["setup"] = setup(workdir)
         _log(log, {"event": "setup", **result["setup"]})
-    prompt = _prompt(spec, paths)
+    prompt = _prompt(spec, paths, workdir)
     chosen = choose_model(spec["model"], agy_quota_left(paths))
     if chosen != spec["model"]:
         _log(log, {"event": "protected", "from": spec["model"], "to": chosen})

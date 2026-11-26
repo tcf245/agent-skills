@@ -154,6 +154,25 @@ def test_wiki_tasks_get_the_wiki_and_the_llm_wiki_skill(env):
     assert str(env.wiki_skill) in command[command.index("-p") + 1]
 
 
+def test_agy_delegate_prompt_includes_workdir_path(env):
+    """反馈 FB-074"""
+    fake_wiki = FakeAgy()
+    res_wiki = go({"goal": "查一下", "wiki": "read"}, env, fake_wiki)
+    cmd_wiki = fake_wiki.calls[0]["command"]
+    prompt_wiki = cmd_wiki[cmd_wiki.index("-p") + 1]
+    assert Path(res_wiki["workdir"]).is_absolute()
+    assert res_wiki["workdir"] in prompt_wiki
+    assert "产出" in prompt_wiki and "写在这个目录" in prompt_wiki
+
+    fake_repo = FakeAgy()
+    res_repo = go({"goal": "改 a.txt", "repo": repo(env)}, env, fake_repo)
+    cmd_repo = fake_repo.calls[0]["command"]
+    prompt_repo = cmd_repo[cmd_repo.index("-p") + 1]
+    assert Path(res_repo["workdir"]).is_absolute()
+    assert res_repo["workdir"] in prompt_repo
+    assert "产出" in prompt_repo and "写在这个目录" in prompt_repo
+
+
 def test_no_wiki_access_unless_asked(env):
     fake = FakeAgy()
     go({"goal": "x", "repo": repo(env)}, env, fake)
