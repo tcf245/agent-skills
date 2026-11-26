@@ -14,26 +14,26 @@ triggers:
 platforms: [cc, codex, gemini]
 ---
 
-# Reframe — 换专业说法与找术语
+# Reframe
 
-只在 Eric 明确说 `reframe`、「帮我换个说法」或「找术语」时执行，不自动触发。常用于 admin 新增角色访谈前，或 Eric 用语音给出模糊需求时。
+Run ONLY when Eric explicitly says `reframe`, `"帮我换个说法"`, or `"找术语"` (never auto-trigger). Commonly used before an admin new-role interview or when Eric gives a vague voice-dictated requirement.
 
-起点：**先读 Eric 给的文件、代码仓库或 wiki 页面，从他自己的描述和材料出发，不凭空想。**
+Starting point: **read the files, code repo, or wiki pages Eric provides first; work from his own description and materials rather than guessing.** Reply in the language the user wrote in.
 
-## 步骤
+## Steps
 
-1. **辨别问题类型**：列出 2–3 种这可能是什么问题，每种写一条能区分它与其他问题的信号；选出最可能的一种并说明原因。
-2. **给 8–12 个专家术语**（按对实现方式的影响排序）：
-   - 术语名 + 一句大白话意思 + 它对应原描述的哪部分。
-   - 用这个词能让你向 agent 要什么。
-   - 一个真实项目、论文或系统文档链接。**每个链接必须用 WebFetch 或同类工具实际打开，确认内容确实按该含义使用此术语；打不开或内容对不上就删掉这条，不要保留未确认的链接。**
-3. **从 2–3 个邻近领域借术语**：写清哪些做法和术语可以带过来，以及**类比在哪里不成立**；顺带指出他没提到但该关心的事。
-4. **重写描述**：用新术语重写 Eric 的原始描述。
+1. **Identify the problem type**: list 2–3 kinds of problem this could be, with one distinguishing signal for each; pick the most likely one and explain why.
+2. **Give 8–12 expert terms** (ordered by how much they affect implementation):
+   - Term + a one-sentence plain-language meaning + which part of the original description it maps to.
+   - What using this term lets you ask an agent for.
+   - One real project, paper, or system documentation link. **Open every link with WebFetch or an equivalent tool and confirm it actually uses the term in that sense; if it does not load or does not match, drop the item rather than keeping an unverified link.**
+3. **Borrow terms from 2–3 adjacent fields**: state which practices and terms transfer, and **where the analogy breaks down**; also flag anything Eric did not mention that he should care about.
+4. **Rewrite the description**: rewrite Eric's original description using the new terminology.
 
-## 输出格式
+## Output format
 
-- 给手机看：**短、不要 Markdown 表格**，不写客套和废话。
+- For reading on a phone: **short, no Markdown tables**, no filler or pleasantries.
 
-## 出处
+## Source
 
-改编自 pstack 的 `reframe`，作者 Lauren Tan（@poteto），MIT License，原链接：https://github.com/cursor/plugins/tree/main/pstack/skills/reframe
+Adapted from the [Cursor pstack `reframe` skill](https://github.com/cursor/plugins/tree/main/pstack/skills/reframe) by Lauren Tan (@poteto), MIT License.
