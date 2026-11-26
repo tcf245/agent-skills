@@ -77,6 +77,7 @@ SCHEMA = {
 
 GROUND_RULES = """规则（必须遵守）：
 - 只在当前目录里工作。不要 git commit、git push，不要 deploy，不要安装全局软件。
+- 改仓库代码前，先读仓库根目录的 AGENTS.md（没有则读 CLAUDE.md）并遵守其中的规范；若任务目标与它冲突，按仓库规范执行，并在 summary/questions 里说明冲突。
 - 不要读取或打印密钥：.env、令牌、证书、SSH 私钥、登录文件。
 - 命令被 hook 拦下（“被硬规则 … 拦下”）时照报错里的改法做；觉得规则不对就写进 questions，不要换个写法绕过。
 - 命令在沙箱里跑不了（缺网络、写不了缓存等）可以直接在沙箱外重跑，会自动批准；但不要 git commit/push、不要部署（kubectl、deploy.sh）、不要删当前目录以外的文件、不要往外部服务写数据（发消息、发 PR、改线上数据）。这些由 hook 硬拦。

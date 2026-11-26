@@ -145,6 +145,14 @@ def test_the_prompt_carries_the_efficiency_rules(env):
         assert rule in prompt, rule
 
 
+def test_the_prompt_carries_the_repo_conventions_rule(env):
+    fake = FakeAgy()
+    go({"goal": "改一个函数", "repo": repo(env)}, env, fake)
+    prompt = fake.calls[0]["command"][fake.calls[0]["command"].index("-p") + 1]
+    assert "AGENTS.md" in prompt and "CLAUDE.md" in prompt
+    assert "冲突" in prompt and "summary/questions" in prompt
+
+
 def test_wiki_tasks_get_the_wiki_and_the_llm_wiki_skill(env):
     fake = FakeAgy()
     go({"goal": "查一下", "wiki": "read"}, env, fake)
