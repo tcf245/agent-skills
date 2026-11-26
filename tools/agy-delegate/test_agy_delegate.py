@@ -562,3 +562,260 @@ def test_the_prompt_carries_the_decisions_log_rule(env):
     assert ".agy/decisions.tsv" in prompt
     assert "ts\\tphase\\tdecision\\twhy\\tevidence\\tresult" in prompt
     assert "只追加" in prompt
+
+
+# ---- 2026-11-26: progress-based time budget ----
+
+def test_timeout_min_and_max_min_validation_and_defaults(env):
+    spec = agy._check({"goal": "x", "repo": repo(env)}, env)
+    assert spec["minutes"] == 30 and spec["max_min"] == 120
+
+    spec_large_base = agy._check({"goal": "x", "repo": repo(env), "timeout_min": 150}, env)
+    assert spec_large_base["minutes"] == 150 and spec_large_base["max_min"] == 150
+
+    spec_explicit = agy._check({"goal": "x", "repo": repo(env), "timeout_min": 45, "max_min": 240}, env)
+    assert spec_explicit["minutes"] == 45 and spec_explicit["max_min"] == 240
+
+    for bad in (0, 181):
+        with pytest.raises(agy.TaskError, match="timeout_min 要在 1 到 180 之间"):
+            agy._check({"goal": "x", "repo": repo(env), "timeout_min": bad}, env)
+
+    with pytest.raises(agy.TaskError, match="max_min 要在 60 到 240 之间"):
+        agy._check({"goal": "x", "repo": repo(env), "timeout_min": 60, "max_min": 59}, env)
+    with pytest.raises(agy.TaskError, match="max_min 要在 30 到 240 之间"):
+        agy._check({"goal": "x", "repo": repo(env), "max_min": 241}, env)
+
+
+def test_print_timeout_uses_max_min(env):
+    fake = FakeAgy()
+    go({"goal": "x", "repo": repo(env)}, env, fake)
+    cmd = fake.calls[0]["command"]
+    assert cmd[cmd.index("--print-timeout") + 1] == "7200s"
+
+    fake2 = FakeAgy()
+    go({"goal": "x", "repo": repo(env), "timeout_min": 30, "max_min": 180}, env, fake2)
+    cmd2 = fake2.calls[0]["command"]
+    assert cmd2[cmd2.index("--print-timeout") + 1] == "10800s"
+
+    fake3 = FakeAgy()
+    go({"goal": "x", "repo": repo(env), "timeout_min": 150}, env, fake3)
+    cmd3 = fake3.calls[0]["command"]
+    assert cmd3[cmd3.index("--print-timeout") + 1] == "9000s"
+
+
+def test_budget_decision_pure_cases():
+    started = 1000.0
+    base_s = 30 * 60
+    cap_s = 60 * 60
+    stall_s = 10 * 60
+    extend_s = 15 * 60
+
+    # Before base with recent progress -> continue
+    assert agy.budget_decision(started + 20 * 60, started, base_s, cap_s, started + 19 * 60, started + base_s, stall_s, extend_s) == "continue"
+    # Before base with no progress for 10 min -> kill-stalled
+    assert agy.budget_decision(started + 10 * 60, started, base_s, cap_s, started, started + base_s, stall_s, extend_s) == "kill-stalled"
+    # Steady progress past base -> extend in 15-min steps up to cap
+    assert agy.budget_decision(started + 30 * 60, started, base_s, cap_s, started + 28 * 60, started + 30 * 60, stall_s, extend_s) == "extend"
+    assert agy.budget_decision(started + 45 * 60, started, base_s, cap_s, started + 43 * 60, started + 45 * 60, stall_s, extend_s) == "extend"
+    # Past base with no progress for 10 min -> kill-stalled
+    assert agy.budget_decision(started + 40 * 60, started, base_s, cap_s, started + 30 * 60, started + 45 * 60, stall_s, extend_s) == "kill-stalled"
+    # At cap -> kill-cap
+    assert agy.budget_decision(started + 60 * 60, started, base_s, cap_s, started + 59 * 60, started + 60 * 60, stall_s, extend_s) == "kill-cap"
+    # When base == cap -> kill-cap at cap, never extend
+    assert agy.budget_decision(started + 30 * 60, started, base_s, base_s, started + 29 * 60, started + base_s, stall_s, extend_s) == "kill-cap"
+
+
+class FakeClock:
+    def __init__(self, start: float = 0.0):
+        self.t = start
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, seconds: float) -> None:
+        self.t += seconds
+
+
+class ScriptedPipe:
+    def __init__(self):
+        self._items = []
+        self._cond = __import__("threading").Condition()
+        self._closed = False
+
+    def push(self, line: str) -> None:
+        with self._cond:
+            self._items.append(line)
+            self._cond.notify_all()
+
+    def close(self) -> None:
+        with self._cond:
+            self._closed = True
+            self._cond.notify_all()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> str:
+        with self._cond:
+            while not self._items and not self._closed:
+                self._cond.wait()
+            if self._items:
+                return self._items.pop(0)
+            raise StopIteration
+
+    def read(self) -> str:
+        return "".join(self)
+
+
+class FakePopen:
+    def __init__(self, clock: FakeClock, on_tick):
+        self.clock = clock
+        self.on_tick = on_tick
+        self.stdout = ScriptedPipe()
+        self.stderr = ScriptedPipe()
+        self.returncode = None
+        self.killed = False
+        self._step = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.stdout.close()
+        self.stderr.close()
+
+    def wait(self, timeout=None):
+        if self.killed:
+            self.returncode = -9
+            return -9
+        if self.returncode is not None:
+            return self.returncode
+        self._step += 1
+        done = self.on_tick(self, self._step)
+        if done:
+            self.stdout.close()
+            self.stderr.close()
+            self.returncode = 0
+            return 0
+        raise subprocess.TimeoutExpired("agy", timeout)
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
+        self.stdout.close()
+        self.stderr.close()
+
+
+def test_watchdog_extends_on_stdout_progress_and_reports_extended_min(env):
+    clock = FakeClock()
+
+    def on_tick(proc: FakePopen, step: int) -> bool:
+        # Advance 5 minutes per tick with stdout activity; finish at 40 min (> 30 min base, < 60 min cap)
+        clock.advance(5 * 60)
+        if step < 8:
+            proc.stdout.push(json.dumps({"event": "init"}) + "\n")
+            __import__("time").sleep(0.01)
+            return False
+        for line in _stream(OK).splitlines(keepends=True):
+            proc.stdout.push(line)
+        __import__("time").sleep(0.01)
+        return True
+
+    def runner(command, cwd, budget, log):
+        return agy._run_agy(command, cwd, budget, log, clock=clock, poll_s=0.01,
+                             popen=lambda *a, **kw: FakePopen(clock, on_tick))
+
+    result = go({"goal": "long task", "repo": repo(env), "timeout_min": 30, "max_min": 60}, env, runner)
+    assert result["status"] == "done"
+    assert result["extended_min"] == 15
+    ext_events = [e for e in agy._events(Path(result["log"]).read_text()) if e.get("event") == "extended"]
+    assert len(ext_events) == 1
+    assert ext_events[0]["by_min"] == 15
+    assert ext_events[0]["elapsed_min"] == 30
+    assert ext_events[0]["decisions_rows"] == 0
+    assert "at" in ext_events[0]
+
+
+def test_watchdog_kills_silent_hang_before_base_and_respects_env_stall(env, monkeypatch):
+    clock = FakeClock()
+
+    def on_tick(proc: FakePopen, step: int) -> bool:
+        proc.clock.advance(5 * 60)  # the proc's own clock, so the second run's clock moves too
+        return False
+
+    def runner(command, cwd, budget, log):
+        return agy._run_agy(command, cwd, budget, log, clock=clock, poll_s=0.01,
+                             popen=lambda *a, **kw: FakePopen(clock, on_tick))
+
+    result = go({"goal": "hang", "repo": repo(env), "timeout_min": 30, "max_min": 60}, env, runner)
+    assert result["status"] == "error"
+    assert result["error"] == "停滞 10 分钟没有进展，已中止（共跑了 10 分钟）"
+    assert result["extended_min"] == 0
+
+    monkeypatch.setenv("AGY_STALL_MIN", "5")
+    clock2 = FakeClock()
+    def runner2(command, cwd, budget, log):
+        return agy._run_agy(command, cwd, budget, log, clock=clock2, poll_s=0.01,
+                             popen=lambda *a, **kw: FakePopen(clock2, on_tick))
+    result2 = go({"goal": "hang2", "repo": repo(env), "timeout_min": 30, "max_min": 60}, env, runner2)
+    assert result2["status"] == "error"
+    assert result2["error"] == "停滞 5 分钟没有进展，已中止（共跑了 5 分钟）"
+
+
+def test_watchdog_kills_at_hard_cap(env):
+    clock = FakeClock()
+
+    def on_tick(proc: FakePopen, step: int) -> bool:
+        clock.advance(5 * 60)
+        proc.stdout.push(json.dumps({"event": "step_update", "step_update": {"state": "DONE", "step_type": "tool", "duration_seconds": 1}}) + "\n")
+        __import__("time").sleep(0.01)
+        return False
+
+    def runner(command, cwd, budget, log):
+        return agy._run_agy(command, cwd, budget, log, clock=clock, poll_s=0.01,
+                             popen=lambda *a, **kw: FakePopen(clock, on_tick))
+
+    result = go({"goal": "too long", "repo": repo(env), "timeout_min": 30, "max_min": 60}, env, runner)
+    assert result["status"] == "error"
+    assert result["error"] == "到了上限 60 分钟，已中止（续期 30 分钟）"
+    assert result["extended_min"] == 30
+    assert result["timing"]["tool_calls"] >= 1
+
+
+def test_watchdog_counts_decisions_tsv_only_as_progress(env):
+    clock = FakeClock()
+
+    def runner(command, cwd, budget, log):
+        def on_tick(proc: FakePopen, step: int) -> bool:
+            clock.advance(5 * 60)
+            # No stdout lines at all until finish; progress only via .agy/decisions.tsv
+            if step in (1, 3, 5, 7):
+                rows = [VALID_HEADER] + [
+                    f"2026-11-26T12:0{i}:00+09:00\tedit\tstep {i}\treason\tf:1\tok"
+                    for i in range(1, step + 1)
+                ]
+                _write_decisions(cwd, rows)
+                return False
+            if step == 8:
+                for line in _stream(OK).splitlines(keepends=True):
+                    proc.stdout.push(line)
+                __import__("time").sleep(0.01)
+                return True
+            return False
+
+        return agy._run_agy(command, cwd, budget, log, clock=clock, poll_s=0.01,
+                             popen=lambda *a, **kw: FakePopen(clock, on_tick))
+
+    result = go({"goal": "tsv progress", "repo": repo(env), "timeout_min": 30, "max_min": 60}, env, runner)
+    assert result["status"] == "done"
+    assert result["extended_min"] == 15
+    ext_events = [e for e in agy._events(Path(result["log"]).read_text()) if e.get("event") == "extended"]
+    assert len(ext_events) == 1
+    assert ext_events[0]["decisions_rows"] == 5  # extended at 30 min (tick 6); tick 5 wrote 5 rows
+
+
+def test_normal_run_includes_zero_extended_min_and_timing(env):
+    result = go({"goal": "x", "repo": repo(env)}, env, TimedAgy())
+    assert result["extended_min"] == 0
+    assert result["timing"] == {"turns": 2, "model_seconds": 200, "longest_turn_seconds": 180,
+                                "tool_calls": 2, "tool_seconds": 6, "thinking_tokens": 21500}

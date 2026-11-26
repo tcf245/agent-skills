@@ -29,6 +29,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -50,7 +51,9 @@ CHAIN = (ORCHESTRATOR_NEON, "gemini-4-argon-high")  # one model per quota bucket
 PROTECT = 0.5  # Eric 2026-11-18: below half of a weekly quota left, protect that bucket instead of using it up
 WEEK, FIVE_HOURS = 7 * 86400, 5 * 3600
 QUOTA_ERROR = re.compile(r"quota|exhaust|rate.?limit|limit (reached|exceeded)|\b429\b", re.IGNORECASE)
-DEFAULT_MINUTES, MAX_MINUTES = 30, 60
+DEFAULT_MINUTES, MAX_BASE_MINUTES = 30, 180
+DEFAULT_CAP_MINUTES, MAX_CAP_MINUTES = 120, 240
+STALL_MIN, EXTEND_MIN, WATCHDOG_POLL_S = 10, 15, 5
 SECRET_PARTS = (".env", ".ssh", "credentials", ".pem", ".key", ".p12", "id_rsa", "token", "secret")
 SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", ".agy-runs", ".agy"}
 DECISIONS_HEADER = ["ts", "phase", "decision", "why", "evidence", "result"]
@@ -104,8 +107,29 @@ class Paths:
     agy_quota: Path = Path(os.environ.get("AGY_QUOTA_FILE", HOME / ".local/share/agent-crew/agy-quota.json"))
 
 
+@dataclass(frozen=True)
+class Budget:
+    base_min: int = DEFAULT_MINUTES
+    max_min: int = DEFAULT_CAP_MINUTES
+    stall_min: float | None = None
+    extend_min: int = EXTEND_MIN
+
+
+class BudgetExceeded(Exception):
+    def __init__(self, reason: str, elapsed_min: int, extended_min: int, stall_min: float, max_min: int,
+                 stdout: str = "", stderr: str = ""):
+        super().__init__(reason)
+        self.reason = reason
+        self.elapsed_min = elapsed_min
+        self.extended_min = extended_min
+        self.stall_min = stall_min
+        self.max_min = max_min
+        self.stdout = stdout
+        self.stderr = stderr
+
+
 # runner(command, cwd, timeout, log) -> (returncode, stdout, stderr); the real one streams stdout into `log` as it comes.
-Runner = Callable[[list[str], Path, int, Path], tuple[int, str, str]]
+Runner = Callable[[list[str], Path, int | Budget, Path], tuple[int, str, str]]
 Opener = Callable[[str], "str | None"]  # returns the Rex block id of the pane it opened
 Closer = Callable[[str], None]
 Setup = Callable[[Path], dict]  # prepares a worktree's dependencies before agy starts; returns what it did
@@ -131,21 +155,120 @@ def _stamped(line: str) -> str:
     return json.dumps({"at": datetime.now(JST).isoformat(timespec="milliseconds"), **event}, ensure_ascii=False) + "\n"
 
 
-def _run_agy(command: list[str], cwd: Path, timeout: int, log: Path) -> tuple[int, str, str]:
-    lines = []
-    with log.open("a") as out, subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                                 stderr=subprocess.PIPE, text=True, env=agy_env()) as proc:
-        deadline = time.monotonic() + timeout
-        for line in proc.stdout:
-            out.write(_stamped(line))
-            out.flush()
-            lines.append(line)
-            if time.monotonic() > deadline:
+def _stall_minutes() -> float:
+    raw = os.environ.get("AGY_STALL_MIN", "").strip()
+    return float(raw) if raw else float(STALL_MIN)
+
+
+def _decisions_stat(workdir: Path) -> tuple[int, int] | None:
+    try:
+        st = (workdir / ".agy" / "decisions.tsv").stat()
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
+def _decisions_rows(workdir: Path) -> int:
+    try:
+        lines = (workdir / ".agy" / "decisions.tsv").read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return 0
+    return max(0, len(lines) - 1)
+
+
+def budget_decision(now: float, started: float, base_s: float, cap_s: float, last_progress: float, deadline: float,
+                    stall_s: float = STALL_MIN * 60, extend_s: float = EXTEND_MIN * 60) -> str:
+    """Decide what the watchdog should do: 'continue', 'extend', 'kill-stalled', or 'kill-cap'."""
+    if now - started >= cap_s:
+        return "kill-cap"
+    if now - last_progress >= stall_s:
+        return "kill-stalled"
+    if now >= deadline:
+        return "extend"
+    return "continue"
+
+
+def _unpack_budget(timeout: int | Budget) -> tuple[float, float, float, float, int]:
+    if isinstance(timeout, Budget):
+        stall_m = timeout.stall_min if timeout.stall_min is not None else _stall_minutes()
+        return (timeout.base_min * 60.0, timeout.max_min * 60.0, stall_m * 60.0,
+                timeout.extend_min * 60.0, timeout.max_min)
+    cap_s = float(timeout)
+    return cap_s, cap_s, _stall_minutes() * 60.0, EXTEND_MIN * 60.0, round(cap_s / 60)
+
+
+def _run_agy(command: list[str], cwd: Path, timeout: int | Budget, log: Path, *,
+             clock: Callable[[], float] = time.monotonic, poll_s: float = WATCHDOG_POLL_S,
+             popen: Callable[..., subprocess.Popen] = subprocess.Popen) -> tuple[int, str, str]:
+    base_s, cap_s, stall_s, extend_s, max_min = _unpack_budget(timeout)
+    lines: list[str] = []
+    stderr_chunks: list[str] = []
+    lock = threading.Lock()
+    started = clock()
+    progress = {"last": started}
+
+    with log.open("a") as out, popen(command, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE, text=True, env=agy_env()) as proc:
+        def read_stdout() -> None:
+            if proc.stdout is None:
+                return
+            for line in proc.stdout:
+                now_line = clock()
+                stamped = _stamped(line)
+                with lock:
+                    out.write(stamped)
+                    out.flush()
+                    lines.append(line)
+                    progress["last"] = now_line
+
+        def read_stderr() -> None:
+            if proc.stderr is not None:
+                stderr_chunks.append(proc.stderr.read())
+
+        reader = threading.Thread(target=read_stdout, daemon=True)
+        err_reader = threading.Thread(target=read_stderr, daemon=True)
+        reader.start()
+        err_reader.start()
+
+        deadline = started + base_s
+        last_tsv = _decisions_stat(cwd)
+        extended_min = 0
+        while True:
+            try:
+                proc.wait(timeout=poll_s)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            now = clock()
+            cur_tsv = _decisions_stat(cwd)
+            with lock:
+                if cur_tsv is not None and cur_tsv != last_tsv:
+                    last_tsv = cur_tsv
+                    progress["last"] = now
+                last_prog = progress["last"]
+            action = budget_decision(now, started, base_s, cap_s, last_prog, deadline, stall_s, extend_s)
+            if action == "extend":
+                new_deadline = min(deadline + extend_s, started + cap_s)
+                by_min = round((new_deadline - deadline) / 60)
+                deadline = new_deadline
+                extended_min += by_min
+                event = {"event": "extended", "by_min": by_min, "elapsed_min": round((now - started) / 60),
+                         "decisions_rows": _decisions_rows(cwd)}
+                with lock:
+                    out.write(_stamped(json.dumps(event, ensure_ascii=False)))
+                    out.flush()
+            elif action in ("kill-stalled", "kill-cap"):
                 proc.kill()
-                raise subprocess.TimeoutExpired(command, timeout)
-        stderr = proc.stderr.read()
-        proc.wait()
-    return proc.returncode, "".join(lines), stderr
+                proc.wait()
+                reader.join(timeout=2)
+                err_reader.join(timeout=2)
+                reason = "stalled" if action == "kill-stalled" else "cap"
+                raise BudgetExceeded(reason=reason, elapsed_min=round((now - started) / 60),
+                                     extended_min=extended_min, stall_min=stall_s / 60, max_min=max_min,
+                                     stdout="".join(lines), stderr="".join(stderr_chunks))
+        reader.join()
+        err_reader.join()
+    return proc.returncode, "".join(lines), "".join(stderr_chunks)
 
 
 def _open_panel(run_id: str) -> str | None:
@@ -199,8 +322,12 @@ def _check(task: dict, paths: Paths) -> dict:
     if model not in MODELS:
         raise TaskError(f"不允许的模型 {model}；可选：{', '.join(sorted(MODELS))}")
     minutes = int(task.get("timeout_min", DEFAULT_MINUTES))
-    if not 1 <= minutes <= MAX_MINUTES:
-        raise TaskError(f"timeout_min 要在 1 到 {MAX_MINUTES} 之间")
+    if not 1 <= minutes <= MAX_BASE_MINUTES:
+        raise TaskError(f"timeout_min 要在 1 到 {MAX_BASE_MINUTES} 之间")
+    raw_max = task.get("max_min")
+    max_min = max(DEFAULT_CAP_MINUTES, minutes) if raw_max is None else int(raw_max)
+    if not minutes <= max_min <= MAX_CAP_MINUTES:
+        raise TaskError(f"max_min 要在 {minutes} 到 {MAX_CAP_MINUTES} 之间")
     if task.get("wiki") not in (None, "read", "write"):
         raise TaskError("wiki 只能是 read 或 write")
     repo = None
@@ -221,8 +348,9 @@ def _check(task: dict, paths: Paths) -> dict:
     rules = task.get("rules", [])
     if not isinstance(rules, list) or not all(isinstance(r, str) for r in rules):
         raise TaskError("rules 必须是字符串列表")
-    return {"goal": task["goal"].strip(), "model": model, "minutes": minutes, "wiki": task.get("wiki"), "repo": repo,
-            "files": files, "rules": rules, "verify": task.get("verify"), "requester": task.get("requester", "")}
+    return {"goal": task["goal"].strip(), "model": model, "minutes": minutes, "max_min": max_min,
+            "wiki": task.get("wiki"), "repo": repo, "files": files, "rules": rules,
+            "verify": task.get("verify"), "requester": task.get("requester", "")}
 
 
 def _prepare(spec: dict, run_id: str, paths: Paths) -> tuple[Path, str | None]:
@@ -256,7 +384,7 @@ def _prompt(spec: dict, paths: Paths) -> str:
 def _command(spec: dict, prompt: str, paths: Paths) -> list[str]:
     command = ["agy", "-p", prompt, "--model", spec["model"], "--sandbox", "--dangerously-skip-permissions",
                "--output-format", "stream-json", "--json-schema", json.dumps(SCHEMA),
-               "--print-timeout", f"{spec['minutes'] * 60}s"]
+               "--print-timeout", f"{spec['max_min'] * 60}s"]
     if spec["wiki"]:
         command += ["--add-dir", str(paths.wiki), "--add-dir", str(paths.wiki_skill.parent)]
     return command
@@ -332,19 +460,34 @@ def timing(stdout: str) -> dict:
             "tool_calls": len(tools), "tool_seconds": round(sum(tools)), "thinking_tokens": thinking}
 
 
+def _extended_minutes(log: Path) -> int:
+    try:
+        text = log.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return 0
+    return sum(int(e.get("by_min", 0)) for e in _events(text) if e.get("event") == "extended")
+
+
 def _call(spec: dict, prompt: str, workdir: Path, paths: Paths, runner: Runner, log: Path) -> dict:
     """One agy run; returns the fields it decides (status, summary or error, model, tokens)."""
     out = {"model": spec["model"]}
     try:
-        code, stdout, stderr = runner(_command(spec, prompt, paths), workdir, spec["minutes"] * 60 + 60, log)
+        code, stdout, stderr = runner(_command(spec, prompt, paths), workdir, Budget(spec["minutes"], spec["max_min"]), log)
+    except BudgetExceeded as err:
+        if err.reason == "stalled":
+            msg = f"停滞 {err.stall_min:g} 分钟没有进展，已中止（共跑了 {err.elapsed_min} 分钟）"
+        else:
+            msg = f"到了上限 {err.max_min} 分钟，已中止（续期 {err.extended_min} 分钟）"
+        return out | {"status": "error", "error": msg, "extended_min": err.extended_min, "timing": timing(err.stdout)}
     except subprocess.TimeoutExpired:
-        return out | {"status": "error", "error": f"agy 超过 {spec['minutes']} 分钟没有结束，已中止"}
+        return out | {"status": "error", "error": f"agy 超过 {spec['minutes']} 分钟没有结束，已中止",
+                      "extended_min": _extended_minutes(log)}
     payload = next((e["result"] for e in _events(stdout) if e.get("event") == "result" and isinstance(e.get("result"), dict)), None)
     if payload is None:
         payload = {"status": "ERROR", "error": (stderr or stdout).strip()[-500:]}
     answer = payload.get("structured_output") or {}
     out |= {"conversation_id": payload.get("conversation_id"), "tokens": (payload.get("usage") or {}).get("total_tokens"),
-            "timing": timing(stdout)}
+            "timing": timing(stdout), "extended_min": _extended_minutes(log)}
     if code != 0 or payload.get("status") != "SUCCESS" or not answer:
         return out | {"status": "error", "error": payload.get("error") or (stderr or "agy 没有返回结构化结果").strip()[-500:]}
     return out | {"status": answer.get("status", "done"), "summary": answer.get("summary", ""),
@@ -466,6 +609,8 @@ def describe(event: dict) -> str | None:
         return f"⚠️ {event['from']} 额度用完，换 {event['to']} 接着做"
     if kind == "protected":
         return f"🛡️ {event['from']} 的额度剩不到一半，留着；改用 {event['to']}"
+    if kind == "extended":
+        return f"⏱️ 有进展，续期 {event.get('by_min')} 分钟（已跑 {event.get('elapsed_min')} 分钟）"
     if kind == "finished":
         files = ", ".join(event.get("files_changed") or []) or "无"
         return f"🏁 结束：{event.get('status')} · 改动文件：{files}"
@@ -502,7 +647,7 @@ def watch(run_id: str, paths: Paths = Paths(), follow: bool = True, out=sys.stdo
             return
         time.sleep(1)
         idle += 1
-        if idle > (MAX_MINUTES + 10) * 60:
+        if idle > (MAX_CAP_MINUTES + 10) * 60:
             return
 
 
