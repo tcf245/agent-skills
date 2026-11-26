@@ -11,6 +11,7 @@ The limits live in this code, not in the model (skill: skills/coding/agy-delegat
 - Changed files are read from git / the folder, not from the model. This script runs outside the caller's sandbox,
   so it never runs arbitrary commands: the caller re-runs the verify command in its own sandbox.
 - `wiki: read|write` adds Eric's LLM Wiki and the llm-wiki skill; wiki edits are listed after the run.
+- `extra_files` writes per-run relative files (e.g. a plugin under `.agents/plugins/`) into the run folder before agy starts, without reporting them in `files_changed` or copying their contents into logs.
 - Inside Rex, a pane opens on the right that shows agy working live (`watch`).
 
 Usage:
@@ -57,6 +58,8 @@ STALL_MIN, EXTEND_MIN, WATCHDOG_POLL_S = 10, 15, 5
 SECRET_PARTS = (".env", ".ssh", "credentials", ".pem", ".key", ".p12", "id_rsa", "token", "secret")
 SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", ".agy-runs", ".agy"}
 DECISIONS_HEADER = ["ts", "phase", "decision", "why", "evidence", "result"]
+MAX_EXTRA_FILES = 20
+MAX_EXTRA_BYTES = 200 * 1024
 
 # Claude quota: Claude stays the gateway even when agy does the work, so its 5-hour window must not reach 100%.
 CONSERVE, RESERVE, STOP = 0.5, 0.8, 0.95
@@ -315,6 +318,36 @@ def _inside(path: Path, root: Path) -> bool:
     return path.resolve().is_relative_to(root.resolve())
 
 
+def _check_extra_files(raw: object, runs_dir: Path) -> dict[str, str]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in raw.items()):
+        raise TaskError("extra_files 必须是 路径→内容 的字符串字典")
+    if len(raw) > MAX_EXTRA_FILES:
+        raise TaskError(f"extra_files 最多 {MAX_EXTRA_FILES} 个文件")
+    if sum(len(v.encode("utf-8")) for v in raw.values()) > MAX_EXTRA_BYTES:
+        raise TaskError(f"extra_files 总大小不能超过 {MAX_EXTRA_BYTES // 1024} KB")
+    probe = runs_dir.resolve()
+    cleaned: dict[str, str] = {}
+    for rel, content in raw.items():
+        segs = rel.replace("\\", "/").split("/")
+        if not rel or "\x00" in rel or rel.endswith(("/", "\\")) or segs[-1] in ("", "."):
+            raise TaskError(f"extra_files 路径必须是相对文件路径：{rel!r}")
+        p = Path(rel)
+        if p.is_absolute() or rel.startswith("\\"):
+            raise TaskError(f"extra_files 路径不能是绝对路径：{rel}")
+        if ".." in p.parts or ".." in segs:
+            raise TaskError(f"extra_files 路径不能包含 ..：{rel}")
+        resolved = (probe / p).resolve()
+        if not resolved.is_relative_to(probe) or resolved == probe:
+            raise TaskError(f"extra_files 路径必须落在运行目录内：{rel}")
+        norm = resolved.relative_to(probe).as_posix()
+        if norm in cleaned:
+            raise TaskError(f"extra_files 路径重复：{rel}")
+        cleaned[norm] = content
+    return cleaned
+
+
 def _check(task: dict, paths: Paths) -> dict:
     if not isinstance(task.get("goal"), str) or not task["goal"].strip():
         raise TaskError("goal 不能为空")
@@ -348,9 +381,24 @@ def _check(task: dict, paths: Paths) -> dict:
     rules = task.get("rules", [])
     if not isinstance(rules, list) or not all(isinstance(r, str) for r in rules):
         raise TaskError("rules 必须是字符串列表")
+    extra_files = _check_extra_files(task.get("extra_files"), paths.runs)
     return {"goal": task["goal"].strip(), "model": model, "minutes": minutes, "max_min": max_min,
-            "wiki": task.get("wiki"), "repo": repo, "files": files, "rules": rules,
-            "verify": task.get("verify"), "requester": task.get("requester", "")}
+            "wiki": task.get("wiki"), "repo": repo, "files": files, "extra_files": extra_files,
+            "rules": rules, "verify": task.get("verify"), "requester": task.get("requester", "")}
+
+
+def _write_extra_files(workdir: Path, extra_files: dict[str, str]) -> None:
+    root = workdir.resolve()
+    for rel, content in extra_files.items():
+        target = workdir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.parent.resolve().is_relative_to(root):
+            raise TaskError(f"extra_files 路径必须落在运行目录内：{rel}")
+        if target.is_symlink():
+            raise TaskError(f"extra_files 目标不能是符号链接：{rel}")
+        target.write_text(content, encoding="utf-8")
+        if rel.endswith((".sh", ".py")):
+            target.chmod(target.stat().st_mode | 0o111)
 
 
 def _prepare(spec: dict, run_id: str, paths: Paths) -> tuple[Path, str | None]:
@@ -359,11 +407,14 @@ def _prepare(spec: dict, run_id: str, paths: Paths) -> tuple[Path, str | None]:
     if spec["repo"]:
         branch = f"agy/{run_id}"
         _git(spec["repo"], "worktree", "add", "-q", "-b", branch, str(workdir), "HEAD")
-        return workdir, branch
-    (workdir / "inputs").mkdir(parents=True)
-    for file in spec["files"]:
-        shutil.copy2(file, workdir / "inputs" / file.name)
-    return workdir, None
+    else:
+        branch = None
+        (workdir / "inputs").mkdir(parents=True)
+        for file in spec["files"]:
+            shutil.copy2(file, workdir / "inputs" / file.name)
+    if spec["extra_files"]:
+        _write_extra_files(workdir, spec["extra_files"])
+    return workdir, branch
 
 
 def _prompt(spec: dict, paths: Paths, workdir: Path) -> str:
@@ -516,7 +567,7 @@ def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: O
     wiki_before = _snapshot(paths.wiki) if spec["wiki"] else {}
     started = time.monotonic()
     result = {"run_id": run_id, "workdir": str(workdir), "branch": branch, "repo": str(spec["repo"]) if spec["repo"] else None,
-              "verify": spec["verify"], "log": str(log)}
+              "verify": spec["verify"], "log": str(log), "extra_files": sorted(spec["extra_files"])}
     if branch and (workdir / "uv.lock").is_file():
         result["setup"] = setup(workdir)
         _log(log, {"event": "setup", **result["setup"]})
@@ -542,7 +593,12 @@ def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: O
     result["seconds"] = round(time.monotonic() - started)
     if decisions := _collect_decisions(workdir, paths.runs / f"{run_id}.decisions.tsv"):
         result["decisions"] = decisions
-    result["files_changed"] = _git_changed(workdir) if branch else [n for n in _changed(before, _snapshot(workdir)) if not n.startswith("inputs/")]
+    extra_paths = set(spec["extra_files"])
+    result["files_changed"] = (
+        [f for f in _git_changed(workdir) if f not in extra_paths]
+        if branch
+        else [n for n in _changed(before, _snapshot(workdir)) if not n.startswith("inputs/") and n not in extra_paths]
+    )
     warnings = []
     if spec["wiki"]:
         result["wiki_changed"] = _changed(wiki_before, _snapshot(paths.wiki))

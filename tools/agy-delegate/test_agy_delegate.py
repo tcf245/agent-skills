@@ -838,3 +838,70 @@ def test_normal_run_includes_zero_extended_min_and_timing(env):
     assert result["extended_min"] == 0
     assert result["timing"] == {"turns": 2, "model_seconds": 200, "longest_turn_seconds": 180,
                                 "tool_calls": 2, "tool_seconds": 6, "thinking_tokens": 21500}
+
+
+# ---- 2026-11-26: extra_files (FB-076) ----
+
+def test_extra_files_written_before_runner_with_executable_hooks_and_hidden_from_outputs(env):
+    secret = "tok_ephemeral_987654321"
+    extra = {
+        ".agents/plugins/crew/plugin.json": '{"name": "crew"}',
+        ".agents/plugins/crew/mcp_config.json": json.dumps({"url": f"http://127.0.0.1:9999/mcp?t={secret}"}),
+        ".agents/plugins/crew/hooks/pre.sh": "#!/bin/sh\necho hi\n",
+        ".agents/plugins/crew/hooks/post.py": "print('hi')\n",
+    }
+    seen = {}
+
+    def edit_repo(cwd: Path):
+        for rel, expected in extra.items():
+            target = cwd / rel
+            seen[rel] = (target.read_text(), target.stat().st_mode & 0o111)
+        (cwd / "a.txt").write_text("new\n")
+
+    res_repo = go({"goal": "use plugin", "repo": repo(env), "extra_files": extra}, env, FakeAgy(edit=edit_repo))
+    assert {k: v[0] for k, v in seen.items()} == extra
+    assert seen[".agents/plugins/crew/hooks/pre.sh"][1] != 0
+    assert seen[".agents/plugins/crew/hooks/post.py"][1] != 0
+    assert seen[".agents/plugins/crew/plugin.json"][1] == 0
+    assert res_repo["files_changed"] == ["a.txt"]
+    assert res_repo["extra_files"] == sorted(extra)
+    assert secret not in json.dumps(res_repo)
+    assert secret not in Path(res_repo["log"]).read_text()
+    assert secret not in (env.runs / "ledger.jsonl").read_text()
+
+    seen_norepo = {}
+
+    def edit_norepo(cwd: Path):
+        for rel in extra:
+            seen_norepo[rel] = (cwd / rel).read_text()
+        (cwd / "out.txt").write_text("done\n")
+
+    res_norepo = go({"goal": "no repo plugin", "extra_files": extra}, env, FakeAgy(edit=edit_norepo))
+    assert seen_norepo == extra
+    assert res_norepo["files_changed"] == ["out.txt"]
+    assert res_norepo["extra_files"] == sorted(extra)
+    assert secret not in json.dumps(res_norepo)
+    assert secret not in Path(res_norepo["log"]).read_text()
+    assert secret not in (env.runs / "ledger.jsonl").read_text()
+
+
+def test_extra_files_validation_refuses_bad_types_paths_counts_and_sizes(env):
+    for bad in ([], "x", {"a.txt": 1}, {1: "a"}):
+        with pytest.raises(agy.TaskError):
+            agy._check({"goal": "x", "extra_files": bad}, env)
+
+    for bad_path in ("../escape.txt", "a/../../b", "a/../b", "/etc/passwd", "/tmp/x", "", ".", "./", "a/.", "a/", "a\\..\\b", "\\abs"):
+        with pytest.raises(agy.TaskError):
+            agy._check({"goal": "x", "extra_files": {bad_path: "x"}}, env)
+
+    ok_20 = {f"f{i}.txt": "x" for i in range(20)}
+    assert len(agy._check({"goal": "x", "extra_files": ok_20}, env)["extra_files"]) == 20
+    too_many = {f"f{i}.txt": "x" for i in range(21)}
+    with pytest.raises(agy.TaskError, match="20"):
+        agy._check({"goal": "x", "extra_files": too_many}, env)
+
+    ok_size = {"a.txt": "x" * (200 * 1024)}
+    assert "a.txt" in agy._check({"goal": "x", "extra_files": ok_size}, env)["extra_files"]
+    too_large = {"a.txt": "x" * (100 * 1024), "b.txt": "y" * (100 * 1024 + 1)}
+    with pytest.raises(agy.TaskError, match="200 KB"):
+        agy._check({"goal": "x", "extra_files": too_large}, env)
