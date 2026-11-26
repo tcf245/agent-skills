@@ -118,6 +118,15 @@ if [ -n "$missing" ]; then
   done <<< "$missing"
 fi
 
+# --- 7. Skill bodies are written in English ---------------------------------
+lang_hits=$(python3 scripts/check_skill_language.py skills || true)
+if [ -n "$lang_hits" ]; then
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    report "$line"
+  done <<< "$lang_hits"
+fi
+
 # --- summary ----------------------------------------------------------------
 if [ "$violations" -eq 0 ]; then
   echo "[lint] ✅ clean"

@@ -12,31 +12,31 @@ triggers:
 platforms: [cc, codex, gemini]
 ---
 
-# Sharpen — 深化需求
+# Sharpen
 
-只在 Eric 明确说 `sharpen` 或「磨一下这个需求」时执行，不自动触发。常用于 admin 新增角色访谈前，或 Eric 用语音给出模糊需求时。
+Run ONLY when Eric explicitly says `sharpen` or `"磨一下这个需求"` (never auto-trigger). Commonly used before an admin new-role interview or when Eric gives a vague voice-dictated requirement.
 
-核心原则：**不做任务本身**，只把需求磨深，不把它放大。
+Core rule: **do not execute the task itself** — deepen the requirement without expanding its scope. Reply in the language the user wrote in.
 
-## 步骤
+## Steps
 
-1. **先回答四问**（针对当前任务，直接给出答案）：
-   - 这个领域的顶级专业人士会做什么，而原需求里没要求？
-   - 他们会从什么最原始的材料开始，而不是已经消化过的摘要？
-   - 他们会用什么具体方法和工具？
-   - 除了你和 Eric 之外，还有什么外部信号能证明结果是对的？
-2. **输出改写后的完整 prompt**：
-   - 把四问的答案写进可执行要求。
-   - **保留原需求里能改变做法的具体要求，删掉原文没有的发挥**。
-   - 凡是**能靠实验决定的选择**，要求 agent 先做原型，再按观察结果推荐方案。
-   - 凡是**实验定不了的纯偏好类选择**（口味、取舍），单独列出来留给 Eric 拍板，不要替他选。
+1. **Answer four questions first** (directly, for the current task):
+   - What would a top practitioner in this field do that the original prompt did not ask for?
+   - What raw primary source would they start from instead of a pre-digested summary?
+   - What concrete methods and tools would they use?
+   - Besides you and Eric, what external signal would prove the result is right?
+2. **Output the rewritten full prompt**:
+   - Turn the four answers into actionable requirements.
+   - **Keep every specific requirement from the original prompt that changes how the work is done, and cut anything invented that was not in the original.**
+   - For any choice **that an experiment can settle**, instruct the agent to prototype first and recommend an option based on what it observes.
+   - For any **pure preference choice that an experiment cannot settle** (taste, trade-offs), list it separately for Eric to decide — do not pick for him.
 
-## 禁止事项
+## Do not
 
-- 直接动手执行原任务。
-- 擅自扩充范围或塞入原文没有的发挥。
-- 替 Eric 做纯偏好类决定。
+- Execute the original task directly.
+- Expand scope or add inventions not present in the original prompt.
+- Make pure preference decisions for Eric.
 
-## 出处
+## Source
 
-改编自 pstack 的 `sharpen`，作者 Lauren Tan（@poteto），MIT License，原链接：https://github.com/cursor/plugins/tree/main/pstack/skills/sharpen
+Adapted from the [Cursor pstack `sharpen` skill](https://github.com/cursor/plugins/tree/main/pstack/skills/sharpen) by Lauren Tan (@poteto), MIT License.

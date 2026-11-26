@@ -30,6 +30,10 @@ After the frontmatter, the skill body is plain Markdown. Keep prompts minimal:
 3. **The actual rules / steps / procedure**
 4. **Anti-patterns** (optional) — what NOT to do
 
+## Language
+
+Write skill bodies (and descriptions) in English, the shared language every agent reads. Keep non-English text only for trigger phrases Eric types, verbatim quotes in quotes, and output examples in backticks or code blocks. Enforced by `scripts/lint.sh` section 7 (FB-078).
+
 ## Cross-platform notes
 
 - Refer to "the agent" or "you" rather than a specific model name when possible.

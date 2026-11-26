@@ -69,7 +69,7 @@ scripts/            ← build.py / build.sh / install.sh / lint.sh
 
 CI runs on every push/PR to `main`:
 
-1. `./scripts/lint.sh` — sensitive-data scan + native directory and frontmatter validation
+1. `./scripts/lint.sh` — sensitive-data scan, native directory/frontmatter validation, and English skill-body check
 2. `python3 ./scripts/build.py --check` — verifies committed `dist/` matches `skills/`
 3. `HOME=/tmp/agy-home ./scripts/install.sh --dry-run all` — verifies the installer in dry-run mode
 
