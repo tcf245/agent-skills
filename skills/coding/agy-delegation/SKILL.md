@@ -1,6 +1,6 @@
 ---
 name: agy-delegation
-description: Use when a task has a big, well-scoped execution part (batch edits across many files, i18n/translation, bulk text, writing tests, collecting and drafting from the wiki), when a question needs fresh web facts about everyday life (restaurants, shops, opening hours, prices, local how-tos), or when Claude's quota is past 50%. Hand that part to agy (Gemini through Google's official Antigravity CLI) with the `agy-delegate` tool; you judge, write the task, and verify.
+description: Use when a task has a big, well-scoped execution part (batch edits across many files, i18n/translation, bulk text, writing tests, collecting and drafting from the wiki), when a web research question about everyday life (restaurants, shops, hours, prices, local how-tos) is clearly too big for a few WebSearch calls, or when Claude's quota is past 50%. Hand that part to agy (Gemini through Google's official Antigravity CLI) with the `agy-delegate` tool; you judge, write the task, and verify.
 type: workflow
 triggers:
   - "交给 agy"
@@ -55,6 +55,10 @@ Don't sync other skills or MCP servers to agy. Put only the rules this task need
 ## Life and web questions (Eric 2026-11-20)
 
 Gemini is strong on everyday knowledge and agy has Google Search, so questions that need fresh facts from the web go to agy: restaurants and shops nearby, opening hours, prices, events, local procedures, general "how do I" knowledge. This saves Claude quota for judgment.
+
+**Only when the job is clearly large (Eric 2026-11-27).** Each delegation costs Claude about four extra turns (load this skill, write the package, read the result, clean up), and every turn re-reads the whole context. So first estimate how much you would search yourself. If a few WebSearch calls can answer it (one or two shops, one opening time, one price check), answer directly with WebSearch: it is faster and costs no more. Delegate only when the estimate is clearly larger, for example many places to compare, many sources per item, or a long write-up, or when Claude's quota is in conserve mode or above. Evidence: a two-brand Black Friday check (run `20261127-214013-4ab3`) took 193 s and 74k Gemini tokens, and reading its long report cost Claude about as much as searching directly.
+
+**Set the answer length up front.** When the question is small but you delegate anyway, say in `goal` to answer in under 300 words. If agy has already written a long result, read it as it is; do not send it back to be shortened.
 
 What agy can and cannot do (probe 2026-11-20, run `20261120-162931-3d5b`): it has `search_web` (Google Search grounding, cites sources through `vertexaisearch.cloud.google.com` redirect links). It has **no** Google Maps/Places tool and no URL fetch, so ratings and review counts arrive second-hand (Tabelog, blogs, travel sites), not live from Maps. A three-restaurant query took 86 s and 32k tokens on Hydrogen.
 
