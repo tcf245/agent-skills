@@ -913,3 +913,78 @@ def test_extra_files_validation_refuses_bad_types_paths_counts_and_sizes(env):
     too_large = {"a.txt": "x" * (100 * 1024), "b.txt": "y" * (100 * 1024 + 1)}
     with pytest.raises(agy.TaskError, match="200 KB"):
         agy._check({"goal": "x", "extra_files": too_large}, env)
+
+
+# ---- 2026-11-27: ship mode (FB-084) ----
+
+def test_ship_requires_repo_and_boolean(env):
+    with pytest.raises(agy.TaskError, match="repo"):
+        agy._check({"goal": "x", "ship": True}, env)
+    with pytest.raises(agy.TaskError, match="布尔"):
+        agy._check({"goal": "x", "repo": repo(env), "ship": "yes"}, env)
+
+
+def test_ship_writes_marker_outside_worktree_and_cleanup_removes_it(env):
+    fake = FakeAgy()
+    result = go({"goal": "ship it", "repo": repo(env), "ship": True, "requester": "eric"}, env, fake)
+    run_id = result["run_id"]
+    workdir = Path(result["workdir"])
+    marker = env.runs / f"{run_id}.ship"
+    assert result["ship"] is True
+    assert marker.is_file()
+    assert not (workdir / f"{run_id}.ship").exists()
+    data = json.loads(marker.read_text(encoding="utf-8"))
+    assert data["requester"] == "eric"
+    assert "T" in data["at"]
+
+    agy.cleanup(run_id, paths=env, closer=no_panel)
+    assert not marker.exists()
+    assert not workdir.exists()
+
+
+def test_ship_cleanup_discard_removes_marker_and_refusal_keeps_it(env):
+    result = go(
+        {"goal": "ship it", "repo": repo(env), "ship": True},
+        env,
+        FakeAgy(edit=lambda cwd: (cwd / "a.txt").write_text("dirty\n")),
+    )
+    run_id = result["run_id"]
+    marker = env.runs / f"{run_id}.ship"
+    assert marker.is_file()
+
+    with pytest.raises(agy.TaskError, match="--discard"):
+        agy.cleanup(run_id, paths=env, closer=no_panel)
+    assert marker.is_file()
+
+    agy.cleanup(run_id, paths=env, closer=no_panel, discard=True)
+    assert not marker.exists()
+
+
+def test_non_ship_writes_no_marker_and_keeps_original_prompt(env):
+    fake = FakeAgy()
+    result = go({"goal": "normal", "repo": repo(env)}, env, fake)
+    assert "ship" not in result
+    assert not (env.runs / f"{result['run_id']}.ship").exists()
+    prompt = fake.calls[0]["command"][fake.calls[0]["command"].index("-p") + 1]
+    assert "不要 git commit、git push" in prompt
+
+
+def test_ship_prompt_allows_feature_branch_pr_merge_deploy_and_keeps_hard_blocks(env):
+    fake = FakeAgy()
+    go({"goal": "ship it", "repo": repo(env), "ship": True}, env, fake)
+    prompt = fake.calls[0]["command"][fake.calls[0]["command"].index("-p") + 1]
+    assert "gh pr create" in prompt
+    assert "gh pr merge" in prompt
+    assert "禁止推 master/main" in prompt
+    assert "gh api" in prompt
+    assert "不要 git commit、git push" not in prompt
+    assert "不要 git commit/push" not in prompt
+
+
+def test_ship_appends_exclude_patterns_once_across_multiple_runs(env):
+    go({"goal": "ship 1", "repo": repo(env), "ship": True}, env, FakeAgy())
+    go({"goal": "ship 2", "repo": repo(env), "ship": True}, env, FakeAgy())
+    exclude = env.workspace / "proj" / ".git" / "info" / "exclude"
+    lines = exclude.read_text(encoding="utf-8").splitlines()
+    for pattern in ("/.agy/", "/answer.md", "/pending.md", "/.agents/"):
+        assert lines.count(pattern) == 1

@@ -96,6 +96,24 @@ GROUND_RULES = """规则（必须遵守）：
 - 不要用 ask_permission、浏览器工具或子代理，任务明确要求时除外。
 - verification 只写命令和结果，不贴长日志。"""
 
+SHIP_EXCLUDE_PATTERNS = ("/.agy/", "/answer.md", "/pending.md", "/.agents/")
+
+GROUND_RULES_SHIP = (
+    GROUND_RULES
+    .replace(
+        "- 只在当前目录里工作。不要 git commit、git push，不要 deploy，不要安装全局软件。",
+        "- 只在当前目录里工作。不要安装全局软件。可以按仓库 AGENTS.md/CLAUDE.md 的流程 git commit、推送当前 feature 分支（禁止推 master/main，禁止 force-push 共享分支，禁止删除远程分支）、用 gh pr create 开 PR、等检查通过后用 gh pr merge 合并，并用仓库自带的部署脚本部署。",
+    )
+    .replace(
+        "- 命令在沙箱里跑不了（缺网络、写不了缓存等）可以直接在沙箱外重跑，会自动批准；但不要 git commit/push、不要部署（kubectl、deploy.sh）、不要删当前目录以外的文件、不要往外部服务写数据（发消息、发 PR、改线上数据）。这些由 hook 硬拦。",
+        "- 命令在沙箱里跑不了（缺网络、写不了缓存等，包括需要访问 worktree 外 .git 的 git/gh/部署命令）可以直接在沙箱外重跑，会自动批准；但仍禁止读取密钥、安装全局软件、删除当前运行目录以外的文件、以及 gh api 写操作。这些由 hook 硬拦。",
+    )
+    .replace(
+        "- 沙箱里 git 用不了（worktree 的 .git 在沙箱外），不要跑 git；改了哪些文件由外面从 git 读。",
+        "- 沙箱里 git 用不了（worktree 的 .git 在沙箱外），需要跑 git 时在沙箱外执行。",
+    )
+)
+
 
 class TaskError(ValueError):
     """The task asks for something this script does not allow; nothing was run."""
@@ -382,10 +400,16 @@ def _check(task: dict, paths: Paths) -> dict:
     rules = task.get("rules", [])
     if not isinstance(rules, list) or not all(isinstance(r, str) for r in rules):
         raise TaskError("rules 必须是字符串列表")
+    ship = task.get("ship", False)
+    if not isinstance(ship, bool):
+        raise TaskError("ship 必须是布尔值")
+    if ship and repo is None:
+        raise TaskError("ship 为 true 时必须指定 repo")
     extra_files = _check_extra_files(task.get("extra_files"), paths.runs)
     return {"goal": task["goal"].strip(), "model": model, "minutes": minutes, "max_min": max_min,
             "wiki": task.get("wiki"), "repo": repo, "files": files, "extra_files": extra_files,
-            "rules": rules, "verify": task.get("verify"), "requester": task.get("requester", "")}
+            "rules": rules, "verify": task.get("verify"), "requester": task.get("requester", ""),
+            "ship": ship}
 
 
 def _write_extra_files(workdir: Path, extra_files: dict[str, str]) -> None:
@@ -402,6 +426,19 @@ def _write_extra_files(workdir: Path, extra_files: dict[str, str]) -> None:
             target.chmod(target.stat().st_mode | 0o111)
 
 
+def _ensure_ship_exclude(repo: Path) -> None:
+    """Append agy run artifacts to git info/exclude once so ship worktrees stay clean for deploy scripts."""
+    common_dir = Path(_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").strip())
+    exclude = common_dir / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+    existing = set(text.splitlines())
+    missing = [p for p in SHIP_EXCLUDE_PATTERNS if p not in existing]
+    if missing:
+        prefix = "" if (not text or text.endswith("\n")) else "\n"
+        exclude.write_text(text + prefix + "\n".join(missing) + "\n", encoding="utf-8")
+
+
 def _prepare(spec: dict, run_id: str, paths: Paths) -> tuple[Path, str | None]:
     workdir = paths.runs / run_id
     paths.runs.mkdir(parents=True, exist_ok=True)
@@ -413,6 +450,14 @@ def _prepare(spec: dict, run_id: str, paths: Paths) -> tuple[Path, str | None]:
         (workdir / "inputs").mkdir(parents=True)
         for file in spec["files"]:
             shutil.copy2(file, workdir / "inputs" / file.name)
+    if spec["ship"]:
+        marker = paths.runs / f"{run_id}.ship"
+        marker.write_text(
+            json.dumps({"requester": spec["requester"], "at": datetime.now(JST).isoformat(timespec="seconds")},
+                       ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        _ensure_ship_exclude(spec["repo"])
     if spec["extra_files"]:
         _write_extra_files(workdir, spec["extra_files"])
     return workdir, branch
@@ -432,7 +477,7 @@ def _prompt(spec: dict, paths: Paths, workdir: Path) -> str:
     if spec["wiki"]:
         mode = "可以按 skill 的规则新建或修改页面" if spec["wiki"] == "write" else "只读，不要修改 wiki 里的任何文件"
         parts.append(f"这个任务要用到 Eric 的 LLM Wiki（{paths.wiki}）：先完整读 {paths.wiki_skill}，按里面的规则查找。wiki 权限：{mode}。")
-    parts.append(GROUND_RULES)
+    parts.append(GROUND_RULES_SHIP if spec["ship"] else GROUND_RULES)
     return "\n\n".join(parts)
 
 
@@ -569,6 +614,8 @@ def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: O
     started = time.monotonic()
     result = {"run_id": run_id, "workdir": str(workdir), "branch": branch, "repo": str(spec["repo"]) if spec["repo"] else None,
               "verify": spec["verify"], "log": str(log), "extra_files": sorted(spec["extra_files"])}
+    if spec["ship"]:
+        result["ship"] = True
     if branch and (workdir / "uv.lock").is_file():
         result["setup"] = setup(workdir)
         _log(log, {"event": "setup", **result["setup"]})
@@ -645,6 +692,7 @@ def cleanup(run_id: str, paths: Paths = Paths(), closer: Closer = _close_panel, 
     elif workdir.is_dir():
         shutil.rmtree(workdir)
     (paths.runs / f"{run_id}.log.jsonl").unlink(missing_ok=True)
+    (paths.runs / f"{run_id}.ship").unlink(missing_ok=True)
     panel = paths.runs / f"{run_id}.panel"
     if panel.is_file():
         try:
