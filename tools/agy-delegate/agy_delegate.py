@@ -60,6 +60,12 @@ SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", ".agy-runs", ".agy"}
 DECISIONS_HEADER = ["ts", "phase", "decision", "why", "evidence", "result"]
 MAX_EXTRA_FILES = 20
 MAX_EXTRA_BYTES = 200 * 1024
+AGY_FAST_DIR = Path(os.environ.get("AGY_FAST_DIR") or HOME / "workspace" / ".agy-tools" / "agy-fast-e707467")
+AGY_FAST_COMMIT = "e70746711833fb8176b676708897da7c08095ff1"
+AGY_HARD_RULES = Path(os.environ.get("AGY_HARD_RULES") or HOME / "workspace" / "agent-crew" / "scripts" / "hard_rules.py")
+NODE = os.environ.get("AGY_FAST_NODE") or "/opt/homebrew/bin/node"
+AGY_FAST_PREFIX = ".agents/plugins/agy-fast/"
+AGY_FAST_TOOLS = ("batch_search", "apply_edits", "read_slices", "quick_outline", "run_checks")
 
 # Claude quota: Claude stays the gateway even when agy does the work, so its 5-hour window must not reach 100%.
 CONSERVE, RESERVE, STOP = 0.5, 0.8, 0.95
@@ -349,6 +355,83 @@ def _check_extra_files(raw: object, runs_dir: Path) -> dict[str, str]:
     return cleaned
 
 
+def _fast_settings() -> tuple[Path, Path, str]:
+    """Read fast-plugin paths from env at call time so tests can override them without reimporting."""
+    fast_dir = Path(os.environ.get("AGY_FAST_DIR") or AGY_FAST_DIR).expanduser()
+    hard_rules = Path(os.environ.get("AGY_HARD_RULES") or AGY_HARD_RULES).expanduser()
+    node = os.environ.get("AGY_FAST_NODE") or NODE
+    if not fast_dir.is_absolute():
+        fast_dir = fast_dir.resolve()
+    if not hard_rules.is_absolute():
+        hard_rules = hard_rules.resolve()
+    return fast_dir, hard_rules, node
+
+
+def _fast_plugin_files(extra_files: dict[str, str]) -> dict[str, str]:
+    """Verify the pinned agy-fast copy and hard_rules boundary guard, then build the plugin's extra_files."""
+    if any(k == AGY_FAST_PREFIX.rstrip("/") or k.startswith(AGY_FAST_PREFIX) for k in extra_files):
+        raise TaskError(f"启用 fast 时 extra_files 不能写入 {AGY_FAST_PREFIX}")
+    fast_dir, hard_rules, node = _fast_settings()
+    commit_file = fast_dir / "COMMIT"
+    if not commit_file.is_file():
+        raise TaskError(f"agy-fast 缺少 COMMIT 文件：{commit_file}")
+    commit = commit_file.read_text(encoding="utf-8", errors="replace").strip()
+    if commit != AGY_FAST_COMMIT:
+        raise TaskError(f"agy-fast COMMIT 不匹配（期望 {AGY_FAST_COMMIT}，实际 {commit or '空'}）")
+    updater = fast_dir / "dist" / "updater.mjs"
+    if updater.exists() or updater.is_symlink():
+        raise TaskError(f"agy-fast 不能包含自动更新器：{updater}")
+    for rel in ("dist/mcp-server.mjs", "dist/session-start.mjs", "plugin.json", "rules/AGENTS.md"):
+        if not (fast_dir / rel).is_file():
+            raise TaskError(f"agy-fast 缺少必需文件：{fast_dir / rel}")
+    if not hard_rules.is_file():
+        raise TaskError(f"找不到 hard_rules 守卫脚本：{hard_rules}")
+    if "agy-fast-boundary" not in hard_rules.read_text(encoding="utf-8", errors="replace"):
+        raise TaskError(f"hard_rules 缺少 agy-fast-boundary 守卫：{hard_rules}")
+
+    mcp_config = {
+        "mcpServers": {
+            "fast": {
+                "command": node,
+                "args": [str(fast_dir / "dist" / "mcp-server.mjs")],
+                "env": {"AGY_FAST_AUTO_UPDATE": "off"},
+                "tools": {tool: {"eager": True} for tool in AGY_FAST_TOOLS},
+            }
+        }
+    }
+    hooks = {
+        "agy-fast-snapshot": {
+            "SessionStart": [
+                {
+                    "type": "command",
+                    "command": f"/usr/bin/env AGY_FAST_AUTO_UPDATE=off {node} {fast_dir / 'dist' / 'session-start.mjs'}",
+                    "timeout": 5,
+                }
+            ]
+        },
+        "agy-fast-hard-rules": {
+            "PreToolUse": [
+                {
+                    "matcher": "mcp_agy-fast_fast_run_checks|mcp_agy-fast_fast_apply_edits",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": f"python3 {hard_rules}",
+                            "timeout": 10,
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+    return {
+        f"{AGY_FAST_PREFIX}plugin.json": (fast_dir / "plugin.json").read_text(encoding="utf-8"),
+        f"{AGY_FAST_PREFIX}rules/AGENTS.md": (fast_dir / "rules" / "AGENTS.md").read_text(encoding="utf-8"),
+        f"{AGY_FAST_PREFIX}mcp_config.json": json.dumps(mcp_config, ensure_ascii=False, indent=2) + "\n",
+        f"{AGY_FAST_PREFIX}hooks.json": json.dumps(hooks, ensure_ascii=False, indent=2) + "\n",
+    }
+
+
 def _check(task: dict, paths: Paths) -> dict:
     if not isinstance(task.get("goal"), str) or not task["goal"].strip():
         raise TaskError("goal 不能为空")
@@ -382,10 +465,15 @@ def _check(task: dict, paths: Paths) -> dict:
     rules = task.get("rules", [])
     if not isinstance(rules, list) or not all(isinstance(r, str) for r in rules):
         raise TaskError("rules 必须是字符串列表")
+    fast = task.get("fast", False)
+    if not isinstance(fast, bool):
+        raise TaskError("fast 必须是布尔值")
     extra_files = _check_extra_files(task.get("extra_files"), paths.runs)
+    if fast:
+        extra_files |= _fast_plugin_files(extra_files)
     return {"goal": task["goal"].strip(), "model": model, "minutes": minutes, "max_min": max_min,
             "wiki": task.get("wiki"), "repo": repo, "files": files, "extra_files": extra_files,
-            "rules": rules, "verify": task.get("verify"), "requester": task.get("requester", "")}
+            "fast": fast, "rules": rules, "verify": task.get("verify"), "requester": task.get("requester", "")}
 
 
 def _write_extra_files(workdir: Path, extra_files: dict[str, str]) -> None:
@@ -568,7 +656,7 @@ def run(task: dict, paths: Paths = Paths(), runner: Runner = _run_agy, opener: O
     wiki_before = _snapshot(paths.wiki) if spec["wiki"] else {}
     started = time.monotonic()
     result = {"run_id": run_id, "workdir": str(workdir), "branch": branch, "repo": str(spec["repo"]) if spec["repo"] else None,
-              "verify": spec["verify"], "log": str(log), "extra_files": sorted(spec["extra_files"])}
+              "verify": spec["verify"], "log": str(log), "extra_files": sorted(spec["extra_files"]), "fast": spec["fast"]}
     if branch and (workdir / "uv.lock").is_file():
         result["setup"] = setup(workdir)
         _log(log, {"event": "setup", **result["setup"]})
@@ -623,6 +711,7 @@ def _ledger(paths: Paths, spec: dict, result: dict) -> None:
     line = {"at": datetime.now(JST).isoformat(timespec="seconds"), "run_id": result["run_id"], "requester": spec["requester"],
             "goal": spec["goal"][:200], "model": result["model"],
             "conversation_id": result.get("conversation_id"), "timing": result.get("timing"), "fallback_from": result.get("fallback_from"), "repo": result["repo"], "wiki": spec["wiki"],
+            "fast": spec["fast"],
             "status": result["status"], "seconds": result["seconds"], "tokens": result.get("tokens"),
             "files_changed": len(result["files_changed"])}
     _log(paths.runs / "ledger.jsonl", line)
