@@ -913,3 +913,145 @@ def test_extra_files_validation_refuses_bad_types_paths_counts_and_sizes(env):
     too_large = {"a.txt": "x" * (100 * 1024), "b.txt": "y" * (100 * 1024 + 1)}
     with pytest.raises(agy.TaskError, match="200 KB"):
         agy._check({"goal": "x", "extra_files": too_large}, env)
+
+
+# ---- 2026-11-27: fast switch (agent-crew FB-082) ----
+
+@pytest.fixture
+def fast_env(tmp_path, monkeypatch):
+    fast_dir = tmp_path / "agy-fast"
+    (fast_dir / "dist").mkdir(parents=True)
+    (fast_dir / "rules").mkdir(parents=True)
+    (fast_dir / "COMMIT").write_text(f"{agy.AGY_FAST_COMMIT}\n")
+    (fast_dir / "dist" / "mcp-server.mjs").write_text("// mcp\n")
+    (fast_dir / "dist" / "session-start.mjs").write_text("// snapshot\n")
+    (fast_dir / "plugin.json").write_text('{"name": "agy-fast"}\n')
+    (fast_dir / "rules" / "AGENTS.md").write_text("# fast rules\n")
+    hard_rules = tmp_path / "hard_rules.py"
+    hard_rules.write_text("# agy-fast-boundary\n")
+    node = "/opt/homebrew/bin/node"
+    monkeypatch.setenv("AGY_FAST_DIR", str(fast_dir))
+    monkeypatch.setenv("AGY_HARD_RULES", str(hard_rules))
+    monkeypatch.setenv("AGY_FAST_NODE", node)
+    return fast_dir, hard_rules, node
+
+
+def test_fast_installs_pinned_plugin_with_guard_and_excludes_from_outputs(env, fast_env):
+    fast_dir, hard_rules, node = fast_env
+    seen = {}
+    plugin_files = (
+        ".agents/plugins/agy-fast/plugin.json",
+        ".agents/plugins/agy-fast/rules/AGENTS.md",
+        ".agents/plugins/agy-fast/mcp_config.json",
+        ".agents/plugins/agy-fast/hooks.json",
+    )
+
+    def edit(cwd: Path):
+        for rel in plugin_files:
+            seen[rel] = (cwd / rel).read_text()
+        (cwd / "a.txt").write_text("new\n")
+
+    result = go(
+        {"goal": "bulk rename", "repo": repo(env), "fast": True, "extra_files": {"pad.txt": "x" * (200 * 1024)}},
+        env,
+        FakeAgy(edit=edit),
+    )
+    assert seen[".agents/plugins/agy-fast/plugin.json"] == '{"name": "agy-fast"}\n'
+    assert seen[".agents/plugins/agy-fast/rules/AGENTS.md"] == "# fast rules\n"
+
+    mcp = json.loads(seen[".agents/plugins/agy-fast/mcp_config.json"])
+    assert mcp == {
+        "mcpServers": {
+            "fast": {
+                "command": node,
+                "args": [f"{fast_dir}/dist/mcp-server.mjs"],
+                "env": {"AGY_FAST_AUTO_UPDATE": "off"},
+                "tools": {t: {"eager": True} for t in ("batch_search", "apply_edits", "read_slices", "quick_outline", "run_checks")},
+            }
+        }
+    }
+
+    hooks = json.loads(seen[".agents/plugins/agy-fast/hooks.json"])
+    assert hooks == {
+        "agy-fast-snapshot": {
+            "SessionStart": [
+                {
+                    "type": "command",
+                    "command": f"/usr/bin/env AGY_FAST_AUTO_UPDATE=off {node} {fast_dir}/dist/session-start.mjs",
+                    "timeout": 5,
+                }
+            ]
+        },
+        "agy-fast-hard-rules": {
+            "PreToolUse": [
+                {
+                    "matcher": "mcp_agy-fast_fast_run_checks|mcp_agy-fast_fast_apply_edits",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": f"python3 {hard_rules}",
+                            "timeout": 10,
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+    assert result["fast"] is True
+    assert result["files_changed"] == ["a.txt"]
+    assert set(plugin_files).issubset(result["extra_files"])
+    ledger_line = json.loads((env.runs / "ledger.jsonl").read_text().splitlines()[-1])
+    assert ledger_line["fast"] is True
+
+
+def test_default_run_has_fast_false_and_no_plugin_dir(env, tmp_path, monkeypatch):
+    monkeypatch.setenv("AGY_FAST_DIR", str(tmp_path / "missing-fast"))
+    monkeypatch.setenv("AGY_HARD_RULES", str(tmp_path / "missing-hard-rules.py"))
+    result = go({"goal": "x", "repo": repo(env)}, env)
+    assert result["fast"] is False
+    assert not (Path(result["workdir"]) / ".agents" / "plugins" / "agy-fast").exists()
+    ledger_line = json.loads((env.runs / "ledger.jsonl").read_text().splitlines()[-1])
+    assert ledger_line["fast"] is False
+
+
+def test_fast_refuses_missing_or_mismatched_commit_and_updater_and_missing_files(env, fast_env):
+    fast_dir, _, _ = fast_env
+
+    (fast_dir / "COMMIT").unlink()
+    with pytest.raises(agy.TaskError, match="COMMIT"):
+        agy._check({"goal": "x", "fast": True}, env)
+
+    (fast_dir / "COMMIT").write_text("deadbeef\n")
+    with pytest.raises(agy.TaskError, match="COMMIT"):
+        agy._check({"goal": "x", "fast": True}, env)
+
+    (fast_dir / "COMMIT").write_text(agy.AGY_FAST_COMMIT)
+    (fast_dir / "dist" / "updater.mjs").write_text("// auto update\n")
+    with pytest.raises(agy.TaskError, match="updater"):
+        agy._check({"goal": "x", "fast": True}, env)
+    (fast_dir / "dist" / "updater.mjs").unlink()
+
+    (fast_dir / "rules" / "AGENTS.md").unlink()
+    with pytest.raises(agy.TaskError, match="AGENTS.md"):
+        agy._check({"goal": "x", "fast": True}, env)
+
+
+def test_fast_refuses_bad_hard_rules_user_plugin_override_and_non_bool(env, fast_env):
+    _, hard_rules, _ = fast_env
+
+    hard_rules.write_text("# no guard here\n")
+    with pytest.raises(agy.TaskError, match="agy-fast-boundary"):
+        agy._check({"goal": "x", "fast": True}, env)
+
+    hard_rules.unlink()
+    with pytest.raises(agy.TaskError, match="hard_rules"):
+        agy._check({"goal": "x", "fast": True}, env)
+
+    hard_rules.write_text("# agy-fast-boundary\n")
+    with pytest.raises(agy.TaskError, match="agy-fast"):
+        agy._check({"goal": "x", "fast": True, "extra_files": {".agents/plugins/agy-fast/custom.txt": "x"}}, env)
+
+    for bad in ("true", 1, 0, None, []):
+        with pytest.raises(agy.TaskError, match="fast"):
+            agy._check({"goal": "x", "fast": bad}, env)
